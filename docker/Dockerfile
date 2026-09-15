@@ -12,17 +12,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN npm install -g pnpm@9
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/ ./packages/
-COPY apps/ ./apps/
+# 克隆官方最新上游源码并构建
+RUN git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 RUN pnpm build
 
 FROM node:22-bullseye-slim AS runner
 
 WORKDIR /app
 
+# 安装容器运行时及常用实用 CLI 工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
