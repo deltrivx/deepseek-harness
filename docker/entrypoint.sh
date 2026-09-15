@@ -35,9 +35,10 @@ if [ -n "${DSH_PROXY_FILE:-}" ] && [ -f "$DSH_PROXY_FILE" ]; then
   cp -f "$DSH_PROXY_FILE" /app/proxy.cjs
 fi
 
-node /app/proxy.cjs &
-PROXY_PID=$!
-trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+# 启动 auth-gate（监听 AUTH_GATE_PORT，默认 3180）
+node /app/auth-gate.cjs &
+GATE_PID=$!
+trap 'kill "$GATE_PID" 2>/dev/null || true' EXIT
 
 cd /app
 exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}"

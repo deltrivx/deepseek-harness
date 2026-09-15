@@ -33,15 +33,16 @@ RUN npm install -g pnpm@9
 COPY --from=builder /app /app
 
 COPY docker/proxy.cjs /app/proxy.cjs
+COPY docker/auth-gate.cjs /app/auth-gate.cjs
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3080 3018
+EXPOSE 3180 3018
 
 ENV NODE_ENV=production
 ENV DSH_HOME=/root/.dsh
-ENV PORT=3080
 ENV DSH_PORT=3018
+ENV AUTH_GATE_PORT=3180
 
 VOLUME ["/root/.dsh", "/workspace"]
 
