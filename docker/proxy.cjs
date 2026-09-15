@@ -1,9 +1,13 @@
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const PORT = parseInt(process.env.PORT || "3080", 10);
 const TARGET_PORT = parseInt(process.env.DSH_PORT || "3018", 10);
 const TARGET_HOST = "127.0.0.1";
 const PUBLIC_TITLE = "DeepSeek Harness";
+const CONFIG_FILE = process.env.DSH_CONFIG_FILE || path.join(process.env.DSH_HOME || "/root/.dsh", "settings.yaml");
+const MAX_CONFIG_BYTES = 1024 * 1024;
 
 let activeCookie = "";
 
@@ -43,13 +47,70 @@ function buildHeaders(req) {
 
 function rewriteHtml(body) {
   const text = body.toString("utf8");
-  if (/<title>[^<]*<\/title>/i.test(text)) {
-    return Buffer.from(text.replace(/<title>[^<]*<\/title>/i, `<title>${PUBLIC_TITLE}</title>`));
+  const bridge = `<script>(function(){document.title="${PUBLIC_TITLE}";new MutationObserver(function(){if(document.title!=="${PUBLIC_TITLE}")document.title="${PUBLIC_TITLE}"}).observe(document.querySelector("head")||document.documentElement,{subtree:true,childList:true,characterData:true});document.addEventListener("click",function(e){var b=e.target&&e.target.closest?e.target.closest("button"):null;if(!b)return;var t=(b.innerText||b.textContent||"").trim();if(t.indexOf("打开配置文件")>=0||/open\\s+config/i.test(t)){e.preventDefault();e.stopImmediatePropagation();location.assign("/__dsh-config");}},true)})()</script>`;
+  let rewritten = text.replace(/<title>[^<]*<\/title>/i, `<title>${PUBLIC_TITLE}</title>`);
+  if (!/<title>[^<]*<\/title>/i.test(text)) rewritten = rewritten.replace(/<head[^>]*>/i, (head) => `${head}<title>${PUBLIC_TITLE}</title>`);
+  if (/<\/head>/i.test(rewritten) && !rewritten.includes("/__dsh-config")) rewritten = rewritten.replace(/<\/head>/i, `${bridge}</head>`);
+  return Buffer.from(rewritten);
+}
+
+function isAuthorized(req) {
+  const cookie = String(req.headers.cookie || "");
+  return Boolean(activeCookie && cookie.includes(activeCookie)) || cookie.split(";").some((item) => item.trim().startsWith("dsh-auth-"));
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_CONFIG_BYTES) {
+        req.destroy(new Error("configuration is too large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function sendConfigPage(req, res) {
+  if (!isAuthorized(req)) {
+    res.writeHead(401, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    res.end("请先在 DeepSeek Harness WebUI 中完成登录。");
+    return;
   }
-  if (/<head[^>]*>/i.test(text)) {
-    return Buffer.from(text.replace(/<head[^>]*>/i, (head) => `${head}<title>${PUBLIC_TITLE}</title>`));
+  let content = "";
+  let error = "";
+  try { content = fs.readFileSync(CONFIG_FILE, "utf8"); } catch (err) { error = err.message; }
+  const body = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeepSeek Harness 配置</title><style>body{font:14px system-ui,sans-serif;margin:0;background:#f5f6f8;color:#1f2328}main{max-width:1100px;margin:24px auto;padding:20px;background:#fff;border:1px solid #d0d7de;border-radius:12px}textarea{width:100%;min-height:65vh;box-sizing:border-box;font:13px ui-monospace,monospace;padding:12px;border:1px solid #8c959f;border-radius:8px}button{padding:8px 16px;border:1px solid #8c959f;border-radius:8px;background:#fff;cursor:pointer}button.primary{background:#0969da;color:#fff;border-color:#0969da}.bar{display:flex;gap:10px;align-items:center;margin:12px 0}.muted{color:#656d76}.error{color:#cf222e;white-space:pre-wrap}</style></head><body><main><h1>DeepSeek Harness 配置</h1><p class="muted">浏览器编辑回退：${escapeHtml(CONFIG_FILE)}。保存前会自动创建 .bak 备份。</p>${error ? `<p class="error">无法读取配置文件：${escapeHtml(error)}</p>` : ""}<textarea id="config" spellcheck="false">${escapeHtml(content)}</textarea><div class="bar"><button class="primary" id="save">保存配置</button><button id="back">返回 WebUI</button><span id="status" class="muted"></span></div></main><script>const status=document.getElementById("status");document.getElementById("back").onclick=()=>location.assign("/");document.getElementById("save").onclick=async()=>{status.textContent="保存中...";try{const r=await fetch("/__dsh-config",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:document.getElementById("config").value})});const j=await r.json();status.textContent=j.ok?"已保存，重启容器后生效":(j.error||"保存失败")}catch(e){status.textContent="保存失败："+e.message}};</script></body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  res.end(body);
+}
+
+async function handleConfigRoute(req, res) {
+  if (req.url === "/__dsh-config" && req.method === "GET") { sendConfigPage(req, res); return true; }
+  if (req.url === "/__dsh-config" && req.method === "POST") {
+    if (!isAuthorized(req)) { res.writeHead(401, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "unauthorized" })); return true; }
+    try {
+      const parsed = JSON.parse(await readRequestBody(req));
+      if (typeof parsed.content !== "string" || Buffer.byteLength(parsed.content, "utf8") > MAX_CONFIG_BYTES) throw new Error("invalid configuration content");
+      fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+      if (fs.existsSync(CONFIG_FILE)) fs.copyFileSync(CONFIG_FILE, `${CONFIG_FILE}.bak-${Date.now()}`);
+      const temporary = `${CONFIG_FILE}.tmp-${process.pid}`;
+      fs.writeFileSync(temporary, parsed.content, { encoding: "utf8", mode: 0o600 });
+      fs.renameSync(temporary, CONFIG_FILE);
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ ok: true }));
+    } catch (err) { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: err.message })); }
+    return true;
   }
-  return body;
+  return false;
 }
 
 function forwardResponse(req, res, proxyRes) {
@@ -80,7 +141,8 @@ function forwardResponse(req, res, proxyRes) {
   proxyRes.pipe(res, { end: true });
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  if (await handleConfigRoute(req, res)) return;
   let urlObj;
   try {
     urlObj = new URL(req.url, "http://" + TARGET_HOST + ":" + PORT);

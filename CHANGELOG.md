@@ -18,3 +18,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prevented browser disconnects from propagating as unhandled `ECONNRESET` errors in the LAN proxy.
 - Stopped stale persisted `proxy.cjs` files from silently overriding the fixed image proxy unless `DSH_PROXY_FILE` is explicitly set.
 - Normalized the WebUI document title to `DeepSeek Harness` and documented direct LAN access without an extra reverse proxy.
+- Added a protected browser-based settings editor at `/__dsh-config` for headless Unraid deployments where native configuration-file opening is unavailable; writes are atomic and create timestamped backups.

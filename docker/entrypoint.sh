@@ -5,6 +5,15 @@ echo "=== 正在启动 DeepSeek Harness (DSH) Docker 增强版 ==="
 
 mkdir -p /root/.dsh /workspace
 
+# Patch the shipped static shell as well as proxied HTML so direct/static access
+# and cached browser loads no longer show the development-only title.
+if [ -f /app/apps/web/dist/index.html ]; then
+  sed -i 's#<title>DSH Local Build</title>#<title>DeepSeek Harness</title>#g' /app/apps/web/dist/index.html
+fi
+if [ -f /app/apps/web/dist/manifest.webmanifest ]; then
+  sed -i 's#"short_name": "DSH"#"short_name": "DeepSeek Harness"#g' /app/apps/web/dist/manifest.webmanifest
+fi
+
 # 只在上游客户端文件存在时应用局域网免 loopback 判定补丁。
 node -e '
 const fs = require("fs");
