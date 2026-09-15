@@ -1,0 +1,15 @@
+services:
+  deepseek-harness:
+    image: ghcr.io/deltrivx/deepseek-harness:latest
+    container_name: deepseek-harness
+    restart: unless-stopped
+    ports:
+      - "3080:3080"
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=3080
+      - DSH_PORT=3018
+    volumes:
+      - ./data:/root/.dsh
+      - ./workspace:/workspace
+    working_dir: /workspace
