@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>deepseek-harness</Name>
+  <Repository>ghcr.io/deltrivx/deepseek-harness:latest</Repository>
+  <Registry>https://github.com/deltrivx/deepseek-harness/pkgs/container/deepseek-harness</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/deltrivx/deepseek-harness/issues</Support>
+  <Project>https://github.com/deltrivx/deepseek-harness</Project>
+  <Overview>DeepSeek Harness (DSH) Docker 增强版 - 开箱即用的智能体运行时，支持局域网与 NAS 访问</Overview>
+  <Category>Productivity: Tools: Utilities:</Category>
+  <WebUI>http://[IP]:[PORT:3080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/main/assets/icon.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <Config Name="WebUI 端口" Target="3080" Default="3080" Mode="tcp" Description="Web 访问端口" Type="Port" Display="always" Required="true" Mask="false">3080</Config>
+  <Config Name="配置目录" Target="/root/.dsh" Default="/mnt/user/appdata/deepseek-harness/data" Mode="rw" Description="DSH 核心持久化目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/data</Config>
+  <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
+</Container>
