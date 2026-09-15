@@ -55,4 +55,4 @@ DSH_OUT="/tmp/.dsh-web.out"
 ) &
 
 # DSH 成为主进程，stdout/stderr 同时进 docker logs 和 $DSH_OUT（供 watcher 读取）
-exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"
+exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --host 0.0.0.0 --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"
