@@ -63,6 +63,8 @@ docker compose up -d
 
 Access Web UI at `http://<HOST_IP>:3080`.
 
+The bundled proxy listens on `0.0.0.0:3080`, so no extra Nginx, domain, or reverse-proxy configuration is required. The page title is normalized to **DeepSeek Harness**, and browser disconnects are handled without propagating upstream `ECONNRESET` failures. Configuration and credentials are persisted under `/root/.dsh`; do not override `/entrypoint.sh` or `/app/proxy.cjs` in an Unraid template, or an old startup script may replace the fixed proxy.
+
 ---
 
 ## 📄 License
