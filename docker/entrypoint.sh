@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 echo "=== 正在启动 DeepSeek Harness (DSH) Docker 增强版 ==="
 
@@ -35,32 +35,24 @@ fi
 
 cd /app
 
-# === 启动 DSH web，把 stdout 引到日志文件，便于抓 token ===
-LOGFILE=/tmp/dsh-web.log
-: > "$LOGFILE"
-node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" >> "$LOGFILE" 2>&1 &
-DSH_PID=$!
-trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
-
-# === 从日志抓 DSH 真实生成的 token，持久化到挂载卷（供 Unraid 拼 URL）===
-# DSH 启动日志会打印形如: dsh web: http://127.0.0.1:3018/?token=***
+# === 后台 watcher：从 DSH 输出文件抓真实 token，持久化到挂载卷（不阻塞主进程） ===
 TOKEN_FILE="/root/.dsh/web-login-token.txt"
-for i in $(seq 1 60); do
-  TOK=$(grep -oE 'token=[^& ]+' "$LOGFILE" 2>/dev/null | head -1 | sed 's/^token=//')
-  if [ -n "$TOK" ]; then
-    echo "$TOK" > "$TOKEN_FILE"
-    chmod 644 "$TOKEN_FILE"
-    echo "$TOK" > /workspace/DSH_WEB_TOKEN.txt
-    chmod 644 /workspace/DSH_WEB_TOKEN.txt
-    echo "[DSH-Docker] 已持久化 DSH 真实 token -> $TOKEN_FILE 和 /workspace/DSH_WEB_TOKEN.txt"
-    break
-  fi
-  sleep 1
-done
-if [ -z "$TOK" ]; then
-  echo "[DSH-Docker] 警告: 未能从日志抓到 token，登录需手动查看 /tmp/dsh-web.log" >&2
-fi
+WORKSPACE_TOKEN_FILE="/workspace/DSH_WEB_TOKEN.txt"
+DSH_OUT="/tmp/.dsh-web.out"
+: > "$DSH_OUT"
 
-# 把日志尾随输出到 stdout（保留容器日志可见）
-tail -f "$LOGFILE"
-wait "$DSH_PID"
+(
+  for i in $(seq 1 120); do
+    TOK=$(grep -oE 'token=[^& ]+' "$DSH_OUT" 2>/dev/null | head -1 | sed 's/^token=//')
+    if [ -n "$TOK" ]; then
+      echo "$TOK" > "$TOKEN_FILE" && echo "$TOK" > "$WORKSPACE_TOKEN_FILE"
+      echo "[DSH-Docker] 已持久化 DSH 真实 token"
+      exit 0
+    fi
+    sleep 1
+  done
+  echo "[DSH-Docker] 警告: 120s 内未能抓到 token" >&2
+) &
+
+# DSH 成为主进程，stdout/stderr 同时进 docker logs 和 $DSH_OUT（供 watcher 读取）
+exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"
