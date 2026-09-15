@@ -28,32 +28,39 @@ if (fs.existsSync(targetFile)) {
 }
 '
 
-# === token 持久化：保证重启不变（无感访问）===
-# 优先级：1. 显式 DSH_WEB_TOKEN 环境变量  2. 已持久化的 token 文件  3. 随机生成
-# 持久化位置：/root/.dsh/web-login-token.txt（挂载卷，容器重启保留）
-TOKEN_FILE="/root/.dsh/web-login-token.txt"
-if [ -z "${DSH_WEB_TOKEN:-}" ] && [ -f "$TOKEN_FILE" ]; then
-  # 复用之前持久化的 token（容器重启不丢）
-  export DSH_WEB_TOKEN="$(cat "$TOKEN_FILE" 2>/dev/null || true)"
-  echo "[DSH-Docker] 复用持久化 token"
-fi
-if [ -z "${DSH_WEB_TOKEN:-}" ]; then
-  # 随机生成并持久化
-  export DSH_WEB_TOKEN="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
-  echo "$DSH_WEB_TOKEN" > "$TOKEN_FILE"
-  chmod 644 "$TOKEN_FILE"
-  echo "[DSH-Docker] 已生成并持久化新 token -> $TOKEN_FILE"
-fi
-# 把 token 也写到 /workspace 方便 Unraid 文件管理器直接查看
-echo "$DSH_WEB_TOKEN" > /workspace/DSH_WEB_TOKEN.txt
-chmod 644 /workspace/DSH_WEB_TOKEN.txt
-echo "[DSH-Docker] token 已同步到 /workspace/DSH_WEB_TOKEN.txt"
-
 # 默认使用镜像内经过测试的代理。仅在显式指定 DSH_PROXY_FILE 时允许覆盖。
 if [ -n "${DSH_PROXY_FILE:-}" ] && [ -f "$DSH_PROXY_FILE" ]; then
   cp -f "$DSH_PROXY_FILE" /app/proxy.cjs
 fi
 
 cd /app
-# 直接跑 DSH web，不再套任何代理
-exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}"
+
+# === 启动 DSH web，把 stdout 引到日志文件，便于抓 token ===
+LOGFILE=/tmp/dsh-web.log
+: > "$LOGFILE"
+node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" >> "$LOGFILE" 2>&1 &
+DSH_PID=$!
+trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
+
+# === 从日志抓 DSH 真实生成的 token，持久化到挂载卷（供 Unraid 拼 URL）===
+# DSH 启动日志会打印形如: dsh web: http://127.0.0.1:3018/?token=***
+TOKEN_FILE="/root/.dsh/web-login-token.txt"
+for i in $(seq 1 60); do
+  TOK=$(grep -oE 'token=[^& ]+' "$LOGFILE" 2>/dev/null | head -1 | sed 's/^token=//')
+  if [ -n "$TOK" ]; then
+    echo "$TOK" > "$TOKEN_FILE"
+    chmod 644 "$TOKEN_FILE"
+    echo "$TOK" > /workspace/DSH_WEB_TOKEN.txt
+    chmod 644 /workspace/DSH_WEB_TOKEN.txt
+    echo "[DSH-Docker] 已持久化 DSH 真实 token -> $TOKEN_FILE 和 /workspace/DSH_WEB_TOKEN.txt"
+    break
+  fi
+  sleep 1
+done
+if [ -z "$TOK" ]; then
+  echo "[DSH-Docker] 警告: 未能从日志抓到 token，登录需手动查看 /tmp/dsh-web.log" >&2
+fi
+
+# 把日志尾随输出到 stdout（保留容器日志可见）
+tail -f "$LOGFILE"
+wait "$DSH_PID"
