@@ -33,16 +33,18 @@ RUN npm install -g pnpm@9
 COPY --from=builder /app /app
 
 COPY docker/proxy.cjs /app/proxy.cjs
-COPY docker/auth-gate.cjs /app/auth-gate.cjs
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3180 3018
+EXPOSE 3018
 
 ENV NODE_ENV=production
 ENV DSH_HOME=/root/.dsh
 ENV DSH_PORT=3018
-ENV AUTH_GATE_PORT=3180
+# 预留：DSH_WEB_TOKEN 固定 token；DSH_AUTH_USER/DSH_AUTH_PASS 预留认证（当前未启用）
+ENV DSH_WEB_TOKEN=
+ENV DSH_AUTH_USER=
+ENV DSH_AUTH_PASS=
 
 VOLUME ["/root/.dsh", "/workspace"]
 
