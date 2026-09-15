@@ -1,4 +1,4 @@
-FROM node:22-slim AS builder
+FROM node:22-bullseye-slim AS builder
 
 WORKDIR /app
 
@@ -10,38 +10,46 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm@latest
+RUN npm install -g pnpm@9
 
-# 克隆官方 deepseek-harness 源码并构建
-RUN git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/ ./packages/
+COPY apps/ ./apps/
 
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
-# 生产运行镜像
-FROM node:22-slim
+FROM node:22-bullseye-slim AS runner
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    bash \
     curl \
+    jq \
+    python3 \
+    tar \
+    gzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm@latest
+RUN npm install -g pnpm@9
 
 COPY --from=builder /app /app
-COPY docker/entrypoint.sh /entrypoint.sh
-COPY docker/proxy.js /app/proxy.js
 
+COPY docker/proxy.cjs /app/proxy.cjs
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+EXPOSE 3080 3018
+
 ENV NODE_ENV=production
+ENV DSH_HOME=/root/.dsh
 ENV PORT=3080
 ENV DSH_PORT=3018
 
-EXPOSE 3080
+VOLUME ["/root/.dsh", "/workspace"]
+
+WORKDIR /workspace
 
 ENTRYPOINT ["/entrypoint.sh"]
