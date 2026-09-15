@@ -1,8 +1,14 @@
-FROM node:22-bullseye-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends     git     python3     make     g++     ca-certificates     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    python3 \
+    make \
+    g++ \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9
 
@@ -11,12 +17,16 @@ RUN git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app
 RUN pnpm install
 RUN pnpm build
 
-FROM node:22-bullseye-slim AS runner
+FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
-# 安装 git, curl, ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends     git     curl     ca-certificates     && rm -rf /var/lib/apt/lists/*
+# 安装 git, curl, ca-certificates 等基础依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9
 
