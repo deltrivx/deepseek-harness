@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -10,16 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@latest
 
-# 克隆官方 deepseek-harness 源码
-RUN git clone https://github.com/deepseek-ai/deepseek-harness.git /app
+# 克隆官方 deepseek-harness 源码并构建
+RUN git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app
 
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install
 RUN pnpm build
 
 # 生产运行镜像
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@latest
 
 COPY --from=builder /app /app
 COPY docker/entrypoint.sh /entrypoint.sh
