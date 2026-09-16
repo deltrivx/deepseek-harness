@@ -79,16 +79,16 @@ function buildBackgroundCss() {
     ? `linear-gradient(rgba(0,0,0,${alpha(dim)}),rgba(0,0,0,${alpha(dim)})),url("${background.url}")`
     : `url("${background.url}")`;
   const lightLayers = [
-    `--dsw-alias-bg-layer-1:rgba(255,255,255,${alpha(base)})`,
-    `--dsw-alias-bg-layer-2:rgba(255,255,255,${alpha(Math.min(1, base + 0.08))})`,
-    `--dsw-alias-bg-layer-3:rgba(255,255,255,${alpha(Math.min(1, base + 0.16))})`,
-    `--dsw-alias-bg-mask-1:rgba(15,18,25,${alpha(Math.min(1, 0.28 + dim))})`,
+    `--dsw-alias-bg-layer-1:rgba(255,255,255,${alpha(base)}) !important`,
+    `--dsw-alias-bg-layer-2:rgba(255,255,255,${alpha(Math.min(1, base + 0.08))}) !important`,
+    `--dsw-alias-bg-layer-3:rgba(255,255,255,${alpha(Math.min(1, base + 0.16))}) !important`,
+    `--dsw-alias-bg-mask-1:rgba(15,18,25,${alpha(Math.min(1, 0.28 + dim))}) !important`,
   ].join(";");
   const darkLayers = [
-    `--dsw-alias-bg-layer-1:rgba(28,28,30,${alpha(base)})`,
-    `--dsw-alias-bg-layer-2:rgba(38,38,41,${alpha(Math.min(1, base + 0.08))})`,
-    `--dsw-alias-bg-layer-3:rgba(48,48,52,${alpha(Math.min(1, base + 0.16))})`,
-    `--dsw-alias-bg-mask-1:rgba(0,0,0,${alpha(Math.min(1, 0.4 + dim))})`,
+    `--dsw-alias-bg-layer-1:rgba(28,28,30,${alpha(base)}) !important`,
+    `--dsw-alias-bg-layer-2:rgba(38,38,41,${alpha(Math.min(1, base + 0.08))}) !important`,
+    `--dsw-alias-bg-layer-3:rgba(48,48,52,${alpha(Math.min(1, base + 0.16))}) !important`,
+    `--dsw-alias-bg-mask-1:rgba(0,0,0,${alpha(Math.min(1, 0.4 + dim))}) !important`,
   ].join(";");
   const blurRule = blur > 0
     ? `main,aside,section,nav{backdrop-filter:blur(${blur}px) !important;-webkit-backdrop-filter:blur(${blur}px) !important;}`
