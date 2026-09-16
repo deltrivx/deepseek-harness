@@ -470,7 +470,7 @@ function appearancePanelScript() {
     "}",
     "var timer=null;",
     "function deb(){clearTimeout(timer);timer=setTimeout(apply,120)}",
-    "function apply(){if(!link)return;var p=[];for(var k in C){p.push(k+'='+encodeURIComponent(C[k]))}link.href='/__dsh-appearance.css?'+p.join('&')+'&t='+Date.now()}",
+    "function apply(){if(!link)return;var p=[];for(var k in C){p.push(k+'='+encodeURIComponent(C[k]))}link.href='/__dsh-appearance.css?'+p.join('&')+'&t='+Date.now();say('未保存 —— 满意后点「保存」')}",
     "function say(t){msg.textContent=t||''}",
     "function setOpen(v){panel.classList.toggle('open',v);wrap.classList.toggle('open',v);try{localStorage.setItem('dshu-open',v?'1':'0')}catch(e){}}",
     "build();",
@@ -494,7 +494,7 @@ function appearancePanelScript() {
     " say('上传中...');",
     " fetch('/__dsh-appearance/background',{method:'POST',headers:{'content-type':f.type||'image/jpeg'},body:f})",
     "  .then(function(r){return r.json().then(function(j){return {s:r.status,j:j}})})",
-    "  .then(function(o){if(o.j.ok){say('背景已更换');apply()}else{say(o.s===401?'请先登录后再保存':'上传失败：'+(o.j.error||''))}})",
+    "  .then(function(o){if(o.j.ok){apply();say('背景已更换')}else{say(o.s===401?'请先登录后再保存':'上传失败：'+(o.j.error||''))}})",
     "  .catch(function(e){say('上传失败：'+e.message)});",
     " file.value='';",
     "};",
@@ -614,7 +614,9 @@ function rewriteHtml(body, req) {
   if (!/<title>[^<]*<\/title>/i.test(text)) rewritten = rewritten.replace(/<head[^>]*>/i, (head) => `${head}<title>${PUBLIC_TITLE}</title>`);
   if (/<\/head>/i.test(rewritten) && !rewritten.includes("/__dsh-config")) {
     const pathname = String((req && req.url) || "/").split("?")[0];
-    const isMainPage = pathname === "/" || pathname === "/index.html";
+    // Keyed off the app shell rather than the exact path, so the panel still
+    // shows up if upstream ever serves the UI from a nested route.
+    const isMainPage = pathname === "/" || pathname === "/index.html" || /<div[^>]+id=["']root["']/i.test(rewritten);
     const link = `<link id="dsh-background" rel="stylesheet" href="${APPEARANCE_CSS_ROUTE}?v=${appearanceVersion()}">`;
     const panel = isMainPage ? appearancePanelScript() : "";
     rewritten = rewritten.replace(/<\/head>/i, `${link}${bridge}${panel}</head>`);
