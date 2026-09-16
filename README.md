@@ -52,7 +52,7 @@
 ```yaml
 services:
   deepseek-harness:
-    image: ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1 # 或 latest
+    image: ghcr.io/deltrivx/deepseek-harness:latest # 或指定具体版本号
     container_name: deepseek-harness
     restart: unless-stopped
     ports:
@@ -84,7 +84,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /mnt/user/appdata/deepseek-harness/data:/root/.dsh \
   -v /mnt/user/appdata/deepseek-harness/workspace:/workspace \
-  ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1
+  ghcr.io/deltrivx/deepseek-harness:latest
 ```
 
 启动完成后，打开浏览器访问：`http://<宿主机IP>:3080` 即可畅享 DeepSeek Harness。
@@ -107,8 +107,8 @@ docker run -d \
 ## 🧩 Unraid 平台快速安装
 
 1. 将仓库 `templates/unraid-template.xml` 导入 Unraid 的 Docker 模板目录，或通过 Community Applications 模板安装。
-2. 镜像地址填写：`ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1`。
-3. 容器图标已自动关联官方矢量 Logo，保持美观统一。
+2. 镜像地址填写：`ghcr.io/deltrivx/deepseek-harness:latest`。
+3. 容器图标已自动关联 256x256 高清 PNG 图标（避免 Unraid 无法解析 SVG 导致图标变问号），保持原生美观统一。
 
 ---
 
@@ -120,7 +120,8 @@ deepseek-harness/
 │   └── workflows/
 │       └── docker-build-ghcr.yml   # 自动化多架构构建与多版本发布工作流
 ├── assets/
-│   └── icon.svg                    # 官方高精度品牌图标
+│   ├── icon.svg                    # 官方高精度矢量图标
+│   └── icon.png                    # 256x256 高清点阵图标（兼容 Unraid 等 NAS 系统）
 ├── docker/
 │   ├── Dockerfile                  # Node 22 环境与多阶段纯净构建定义
 │   ├── entrypoint.sh               # 容器初始化守护进程
