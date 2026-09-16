@@ -33,10 +33,32 @@ if [ -n "${DSH_PROXY_FILE:-}" ] && [ -f "$DSH_PROXY_FILE" ]; then
   cp -f "$DSH_PROXY_FILE" /app/proxy.cjs
 fi
 
+# === 固定 token：预置 HMAC secret 进挂载卷 .credentials.yaml ===
+# DSH browser-auth 用 32 字节 secret 做 HMAC-SHA256 签 cookie，secret 存在
+# /root/.dsh/.credentials.yaml 的 client-connection/browser-session 记录里。
+# 只要这个文件保留，DSH 每次启动都复用同一 secret → token 永远固定不变。
+# entrypoint 只在文件缺失时生成一次，之后永不覆盖。
+CRED_FILE="/root/.dsh/.credentials.yaml"
+if [ ! -f "$CRED_FILE" ]; then
+  SECRET_B64URL=$(node -e "process.stdout.write(Buffer.from(require('crypto').randomBytes(32)).toString('base64').replaceAll('+','-').replaceAll('/','_').replace(/=+$/,''))")
+  cat > "$CRED_FILE" <<YAML
+version: 1
+records:
+  client-connection/browser-session:
+    kind: grant
+    payload:
+      version: 1
+      secret: ${SECRET_B64URL}
+YAML
+  chmod 600 "$CRED_FILE"
+  echo "[DSH-Docker] 已生成固定 HMAC secret 并写入 $CRED_FILE（token 将跨镜像/重启固定不变）"
+else
+  echo "[DSH-Docker] 检测到已存在的固定 secret（$CRED_FILE），token 保持固定"
+fi
+
 cd /app
 
 # === 启动精简版边缘透传代理（0.0.0.0:EDGE_PORT -> 127.0.0.1:3018，无 Basic Auth） ===
-# DSH 自身只允许监听 127.0.0.1，局域网访问走 edge-proxy 转发。
 EDGE_PORT="${EDGE_PORT:-3180}"
 EDGE_OUT="/tmp/.edge-proxy.out"
 : > "$EDGE_OUT"
@@ -64,5 +86,4 @@ DSH_OUT="/tmp/.dsh-web.out"
 ) &
 
 # DSH 成为主进程，stdout/stderr 同时进 docker logs 和 $DSH_OUT（供 watcher 读取）
-# 注意：DSH 安全限制只允许 127.0.0.1，局域网走 edge-proxy。
 exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"
