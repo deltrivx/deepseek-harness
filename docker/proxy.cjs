@@ -395,7 +395,9 @@ function appearancePanelScript() {
     "var st=document.createElement('style');",
     "st.textContent='#dshu-wrap{position:fixed;right:16px;bottom:16px;z-index:2147483000;font:13px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",system-ui,sans-serif;color:#1f2328}'" +
       "+'#dshu-wrap *{box-sizing:border-box}'" +
-      "+'#dshu-btn{width:40px;height:40px;border-radius:50%;border:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.82);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer;font-size:12px;color:#1f2328;display:block;margin-left:auto}'" +
+      "+'#dshu-btn{width:40px;height:40px;padding:0;border-radius:50%;border:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.82);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer;color:#1f2328;display:flex;align-items:center;justify-content:center;margin-left:auto}'" +
+      "+'#dshu-wrap.open #dshu-btn{display:none}'" +
+      "+'#dshu-wrap #dshu-btn svg{width:20px;height:20px;display:block}'" +
       "+'#dshu-panel{display:none;width:290px;max-height:74vh;overflow:auto;margin-top:8px;padding:14px;border-radius:14px;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.08);box-shadow:0 10px 36px rgba(0,0,0,.2)}'" +
       "+'#dshu-panel.open{display:block}'" +
       "+'#dshu-head{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:10px}'" +
@@ -419,7 +421,11 @@ function appearancePanelScript() {
       "+'body[data-ds-dark-theme] #dshu-wrap select,body[data-ds-dark-theme] #dshu-ops button{background:rgba(50,50,56,.9);border-color:rgba(255,255,255,.18);color:#e6e6e6}';",
     "document.head.appendChild(st);",
     "var wrap=document.createElement('div');wrap.id='dshu-wrap';",
-    "wrap.innerHTML='<button id=\"dshu-btn\" type=\"button\" title=\"外观设置\">外观</button>'" +
+    "wrap.innerHTML='<button id=\"dshu-btn\" type=\"button\" title=\"外观设置\" aria-label=\"外观设置\">'" +
+      "+'<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">'" +
+      "+'<circle cx=\"12\" cy=\"12\" r=\"3\"></circle>'" +
+      "+'<path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"></path>'" +
+      "+'</svg></button>'" +
       "+'<div id=\"dshu-panel\">'" +
       "+'<div id=\"dshu-head\"><span>外观设置</span><span id=\"dshu-close\">×</span></div>'" +
       "+'<label id=\"dshu-on\"><input type=\"checkbox\" id=\"dshu-enabled\"> 启用背景图</label>'" +
@@ -466,9 +472,10 @@ function appearancePanelScript() {
     "function deb(){clearTimeout(timer);timer=setTimeout(apply,120)}",
     "function apply(){if(!link)return;var p=[];for(var k in C){p.push(k+'='+encodeURIComponent(C[k]))}link.href='/__dsh-appearance.css?'+p.join('&')+'&t='+Date.now()}",
     "function say(t){msg.textContent=t||''}",
+    "function setOpen(v){panel.classList.toggle('open',v);wrap.classList.toggle('open',v);try{localStorage.setItem('dshu-open',v?'1':'0')}catch(e){}}",
     "build();",
-    "wrap.querySelector('#dshu-btn').onclick=function(){panel.classList.toggle('open');try{localStorage.setItem('dshu-open',panel.classList.contains('open')?'1':'0')}catch(e){}};",
-    "wrap.querySelector('#dshu-close').onclick=function(){panel.classList.remove('open');try{localStorage.setItem('dshu-open','0')}catch(e){}};",
+    "wrap.querySelector('#dshu-btn').onclick=function(){setOpen(true)};",
+    "wrap.querySelector('#dshu-close').onclick=function(){setOpen(false)};",
     "wrap.querySelector('#dshu-adv-toggle').onclick=function(){var a=wrap.querySelector('#dshu-adv');var open=a.style.display==='none';a.style.display=open?'block':'none';this.textContent=(open?'▾':'▸')+' 高级'};",
     "wrap.querySelector('#dshu-enabled').onchange=function(){C.enabled=this.checked;apply()};",
     "wrap.querySelector('#dshu-save').onclick=function(){",
@@ -491,7 +498,7 @@ function appearancePanelScript() {
     "  .catch(function(e){say('上传失败：'+e.message)});",
     " file.value='';",
     "};",
-    "try{if(localStorage.getItem('dshu-open')==='1')panel.classList.add('open')}catch(e){}",
+    "try{if(localStorage.getItem('dshu-open')==='1')setOpen(true)}catch(e){}",
     "};",
     "if(document.body&&document.body.nodeName){boot()}else{document.addEventListener('DOMContentLoaded',boot)}",
     "})()",
