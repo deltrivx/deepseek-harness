@@ -18,7 +18,7 @@ const BACKGROUND_LAYER_ALPHA = process.env.DSH_BACKGROUND_LAYER_ALPHA;
 const BACKGROUND_DIM = process.env.DSH_BACKGROUND_DIM;
 const BACKGROUND_BLUR = process.env.DSH_BACKGROUND_BLUR;
 const BACKGROUND_ENABLED = (process.env.DSH_BACKGROUND_ENABLED || "auto").trim().toLowerCase();
-const BACKGROUND_CSS_FILE = (process.env.DSH_BACKGROUND_CSS || "").trim();
+const BACKGROUND_CSS_FILE = (process.env.DSH_BACKGROUND_CSS || path.join(DSH_HOME, "background.css")).trim();
 const MAX_BACKGROUND_BYTES = 32 * 1024 * 1024;
 
 // The theme presenter writes every --dsw-* token onto document.body as inline
@@ -130,17 +130,20 @@ function resolveBackground() {
   }
 }
 
-function buildBackgroundCssBody() {
-  const custom = BACKGROUND_CSS_FILE;
-  if (custom) {
-    try {
-      const css = fs.readFileSync(custom, "utf8");
-      if (css.trim()) return css;
-    } catch {
-      return "";
-    }
+function readCssFile(file) {
+  try {
+    const css = fs.readFileSync(file, "utf8");
+    return css.trim() ? css : "";
+  } catch {
     return "";
   }
+}
+
+function buildBackgroundCssBody() {
+  // An explicitly configured file fully replaces the generated stylesheet.
+  const explicit = (process.env.DSH_BACKGROUND_CSS || "").trim();
+  if (explicit) return readCssFile(explicit);
+
   const background = resolveBackground();
   if (!background) return "";
   const base = clampUnit(BACKGROUND_LAYER_ALPHA, 0.72, 0, 1);
@@ -157,13 +160,16 @@ function buildBackgroundCssBody() {
   // Name-agnostic safety net: hashed CSS-module class names still carry the
   // original words, so this keeps working even if upstream renames tokens.
   const containerRule = `[class*="sidebar"],[class*="Sidebar"],[class*="side-bar"],[class*="drawer"],[class*="Drawer"],[class*="panel"],[class*="Panel"],[class*="column"],[class*="Column"],aside,nav,main,[role="navigation"],[role="complementary"],[role="dialog"]{background-color:color-mix(in srgb,var(--dsw-bgw-layer1) ${percent}%,transparent) !important;}`;
-  return [
+  const generated = [
     `html,body{background-image:${image} !important;background-size:${cssUrl(BACKGROUND_SIZE)} !important;background-position:${cssUrl(BACKGROUND_POSITION)} !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}`,
     `html,body{background-color:transparent !important;}`,
     buildTokenCss(base, subtle),
     containerRule,
     blurRule,
   ].join("");
+  // A background.css dropped next to the image is appended, so tweaks can be
+  // iterated by editing the file and hard-refreshing: no restart, no rebuild.
+  return generated + readCssFile(BACKGROUND_CSS_FILE);
 }
 
 function buildBackgroundCss() {
