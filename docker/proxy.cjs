@@ -318,6 +318,9 @@ function renderAppearanceCss(cfg) {
     `textarea,input,select{background-color:rgba(255,255,255,${alpha(base.inputAlpha)}) !important;${inputBlur}color:#1f2328 !important;}`,
     `body[data-ds-dark-theme] main{background-color:rgba(28,28,30,${alpha(Math.min(1, base.panelAlpha * 1.3))}) !important;}`,
     `body[data-ds-dark-theme] textarea,body[data-ds-dark-theme] input,body[data-ds-dark-theme] select{background-color:rgba(28,28,30,${alpha(Math.min(1, base.inputAlpha * 1.4))}) !important;color:#e6e6e6 !important;}`,
+    // Conversation / answer blocks: card-like, inset from both sides, rounded,
+    // using the same surface token as the rest of the workspace.
+    `[class*="markdown"],[class*="Markdown"]{background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:12px !important;margin-left:12px !important;margin-right:12px !important;padding:10px 12px !important;}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
   // hand-written tweaks keep winning over the panel.
@@ -415,7 +418,7 @@ function appearancePanelScript() {
       "+'#dshu-sel label{display:block;font-size:12px;opacity:.85;margin:6px 0 2px}'" +
       "+'#dshu-ops{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}'" +
       "+'#dshu-ops button{flex:1 1 44%;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.15));background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.9));color:inherit;cursor:pointer;font:inherit}'" +
-      "+'#dshu-ops button.p{background:var(--dsw-alias-brand-primary,#0969da);color:#fff;border-color:var(--dsw-alias-brand-primary,#0969da)}'" +
+      "+'#dshu-ops button.p{background:#0969da;color:#fff;border-color:#0969da}'" +
       "+'#dshu-adv{margin-top:8px}'" +
       "+'#dshu-adv-toggle{font-size:12px;opacity:.7;cursor:pointer;margin:8px 0 6px;display:inline-block}'" +
       "+'#dshu-msg{font-size:12px;opacity:.8;margin-top:8px;min-height:16px}'" +
@@ -475,6 +478,20 @@ function appearancePanelScript() {
     "function apply(){if(!link)return;var p=[];for(var k in C){p.push(k+'='+encodeURIComponent(C[k]))}link.href='/__dsh-appearance.css?'+p.join('&')+'&t='+Date.now();say('未保存 —— 满意后点「保存」')}",
     "function say(t){msg.textContent=t||''}",
     "function setOpen(v){panel.classList.toggle('open',v);wrap.classList.toggle('open',v);try{localStorage.setItem('dshu-open',v?'1':'0')}catch(e){}}",
+    // Only the landing page keeps the launcher, and never while a dialog or
+    // overlay is on top of it.
+    "function shouldShow(){",
+    " if(panel.classList.contains('open'))return true;",
+    " var p=location.pathname||'/';",
+    " if(p!=='/'&&p!=='/index.html')return false;",
+    " if(document.querySelector('[role=\"dialog\"],[role=\"alertdialog\"],[class*=\"mask\"],[class*=\"Mask\"],[class*=\"modal\"],[class*=\"Modal\"]'))return false;",
+    " return true;",
+    "}",
+    "var syncTimer=null;",
+    "function syncVisibility(){clearTimeout(syncTimer);syncTimer=setTimeout(function(){wrap.style.display=shouldShow()?'':'none'},80)}",
+    "new MutationObserver(syncVisibility).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','role','style']});",
+    "window.addEventListener('popstate',syncVisibility);",
+    "syncVisibility();",
     "build();",
     "wrap.querySelector('#dshu-btn').onclick=function(){setOpen(true)};",
     "wrap.querySelector('#dshu-close').onclick=function(){setOpen(false)};",
