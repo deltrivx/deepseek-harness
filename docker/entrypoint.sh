@@ -35,6 +35,15 @@ fi
 
 cd /app
 
+# === 启动精简版边缘透传代理（0.0.0.0:EDGE_PORT -> 127.0.0.1:3018，无 Basic Auth） ===
+# DSH 自身只允许监听 127.0.0.1，局域网访问走 edge-proxy 转发。
+EDGE_PORT="${EDGE_PORT:-3180}"
+EDGE_OUT="/tmp/.edge-proxy.out"
+: > "$EDGE_OUT"
+node /app/edge-proxy.cjs >> "$EDGE_OUT" 2>&1 &
+EDGE_PID=$!
+echo "[DSH-Docker] edge-proxy 已启动: 0.0.0.0:${EDGE_PORT} -> 127.0.0.1:${DSH_PORT:-3018} (纯透传)"
+
 # === 后台 watcher：从 DSH 输出文件抓真实 token，持久化到挂载卷（不阻塞主进程） ===
 TOKEN_FILE="/root/.dsh/web-login-token.txt"
 WORKSPACE_TOKEN_FILE="/workspace/DSH_WEB_TOKEN.txt"
@@ -55,4 +64,5 @@ DSH_OUT="/tmp/.dsh-web.out"
 ) &
 
 # DSH 成为主进程，stdout/stderr 同时进 docker logs 和 $DSH_OUT（供 watcher 读取）
-exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --host 0.0.0.0 --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"
+# 注意：DSH 安全限制只允许 127.0.0.1，局域网走 edge-proxy。
+exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}" 2>&1 | tee -a "$DSH_OUT"

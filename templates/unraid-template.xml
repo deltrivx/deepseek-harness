@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>deepseek-harness</Name>
-  <Repository>ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1</Repository>
+  <Repository>ghcr.io/deltrivx/deepseek-harness:latest</Repository>
   <Registry>https://github.com/deltrivx/deepseek-harness/pkgs/container/deepseek-harness</Registry>
   <Network>bridge</Network>
   <MyIP/>
@@ -9,12 +9,13 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/deltrivx/deepseek-harness/issues</Support>
   <Project>https://github.com/deltrivx/deepseek-harness</Project>
-  <Overview>DeepSeek Harness (DSH) Docker 增强版 - 开箱即用的智能体运行时，支持局域网与 NAS 访问</Overview>
-  <Category>Productivity: Tools: Utilities:</Category>
-  <WebUI>http://[IP]:[PORT:3080]/</WebUI>
+  <Overview>DeepSeek Harness (DSH) Docker 增强版。局域网访问入口为 edge-proxy（0.0.0.0:3180 -> 127.0.0.1:3018，纯透传）。首次登录：容器启动后 token 自动写入挂载卷 /root/.dsh/web-login-token.txt（以及 /workspace/DSH_WEB_TOKEN.txt），在 Unraid 文件管理器中打开该文件，拼接 URL 为 http://[IP]:[PORT]/?token=*** 值，浏览器完成 cookie 登录（30 天有效）。此后直接访问 http://[IP]:[PORT] 即可无感进入。注意：DSH 安全限制只允许监听 127.0.0.1，故必须经 edge-proxy 转发，直连 3018 不通。</Overview>
+  <WebUI>http://[IP]:[PORT:3180]/?token=***</WebUI>
   <Icon>https://raw.githubusercontent.com/deltrivx/deepseek-harness/main/assets/icon.svg</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
-  <Config Name="WebUI 端口" Target="3080" Default="3080" Mode="tcp" Description="Web 访问端口" Type="Port" Display="always" Required="true" Mask="false">3080</Config>
-  <Config Name="配置目录" Target="/root/.dsh" Default="/mnt/user/appdata/deepseek-harness/data" Mode="rw" Description="DSH 核心持久化目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/data</Config>
-  <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
+  <Config Name="edge-proxy 端口（局域网访问入口）" Target="3180" Default="3180" Mode="tcp" Description="edge-proxy 监听端口，纯透传转发到 DSH web 3018，无 Basic Auth" Type="Port" Display="always" Required="true" Mask="false">3180</Config>
+  <Config Name="DSH web 内部端口" Target="3018" Default="3018" Mode="tcp" Description="DSH web 本体端口（容器内 127.0.0.1），通常无需映射，仅供容器内部 edge-proxy 转发" Type="Port" Display="no" Required="false" Mask="true">3018</Config>
+  <Config Name="配置目录" Target="/root/.dsh" Default="/mnt/user/appdata/deepseek-harness/data" Mode="rw" Description="DSH 核心持久化目录，启动后 token 文件 web-login-token.txt 写入此处" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/data</Config>
+  <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区，启动后 DSH_WEB_TOKEN.txt 也写入此处，方便 Unraid 文件管理器直接查看 token" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
+  <Config Name="登录 token（可选）" Target="DSH_WEB_TOKEN" Default="" Mode="env" Description="若手动填入固定 token 则优先使用（需同时确保 dsh web 支持该变量）；留空则每次启动由 DSH 随机生成并自动持久化到挂载卷" Type="Other" Display="no" Required="false" Mask="true"></Config>
 </Container>
