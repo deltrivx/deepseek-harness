@@ -324,9 +324,13 @@ function renderAppearanceCss(cfg) {
     // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
     // must be excluded or every .md file chip would get a card around it.
     `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:8px !important;margin-right:8px !important;padding:10px 12px !important;}`,
-    // Message column container: round its corners and align its width to the
-    // composer outer layer (829px). The composer width itself is NOT touched.
-    `[class~="_4SmsrG_column"]{border-radius:22px !important;width:829px !important;max-width:829px !important;}`,
+    // Message column container ("直角背景"): round its corners and lock its
+    // width to the visible composer card so the two panels always share the
+    // exact same width, regardless of viewport or upstream CSS variable changes.
+    // --dsh-composer-card-max-width = PbIGXq_card.max-width (712px constant).
+    // Using the same variable means we can never accidentally widen the top
+    // panel past the bottom workspace, and vice-versa.
+    `[class~="_4SmsrG_column"]{border-radius:22px !important;width:var(--dsh-composer-card-max-width,712px) !important;max-width:var(--dsh-composer-card-max-width,712px) !important;}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
   // hand-written tweaks keep winning over the panel.
