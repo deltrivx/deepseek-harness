@@ -5,10 +5,15 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - "v*"
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      dsh_ref:
+        description: "Upstream Git Tag/Branch to build (optional)"
+        required: false
+        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -38,17 +43,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve Build Arguments & Tags
+        id: prep
+        run: |
+          BUILD_REF=""
+          EXTRA_TAGS=""
+
+          if [ -n "${{ github.event.inputs.dsh_ref }}" ]; then
+            BUILD_REF="${{ github.event.inputs.dsh_ref }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            BUILD_REF="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+            BUILD_REF="${GITHUB_REF#refs/tags/}"
+          fi
+
+          if [ -n "$BUILD_REF" ]; then
+            # Clean tag name: v0.1.6-alpha.1 -> 0.1.6-alpha.1 / v0.1.6-alpha.1
+            CLEAN_VER=$(echo "$BUILD_REF" | sed -E "s/^dsh-//; s/^v//")
+            EXTRA_TAGS="type=raw,value=${CLEAN_VER}
+type=raw,value=v${CLEAN_VER}"
+            echo "build_arg=DSH_REF=${BUILD_REF}" >> $GITHUB_OUTPUT
+          else
+            echo "build_arg=" >> $GITHUB_OUTPUT
+          fi
+          echo -e "extra_tags<<EOF
+$EXTRA_TAGS
+EOF" >> $GITHUB_OUTPUT
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == "refs/heads/main" || github.event_name == "release" }}
             type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=0.1.6-alpha.1,enable=${{ github.ref == 'refs/heads/main' }}
+            ${{ steps.prep.outputs.extra_tags }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -57,6 +87,8 @@ jobs:
           file: ./docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            ${{ steps.prep.outputs.build_arg }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
