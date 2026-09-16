@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icon.svg" alt="DeepSeek Harness Logo" width="120" height="120" />
+<img src="assets/icon.png" alt="DeepSeek Harness Logo" width="120" height="120" />
 
 # DeepSeek Harness (DSH) Docker Enhanced
 
