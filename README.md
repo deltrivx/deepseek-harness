@@ -112,6 +112,32 @@ docker run -d \
 
 ---
 
+## 🎨 自定义 WebUI 背景（可选）
+
+上游 DSH 目前只提供明暗主题与字号设置，**不支持背景图**。本镜像在局域网代理层提供了可选的背景能力：
+
+1. 把任意一张图片放到持久化目录，命名为 `background.jpg`（Unraid 示例：`/mnt/user/appdata/deepseek-harness/data/background.jpg`）。
+2. 重启容器，浏览器硬刷新（`Cmd/Ctrl + Shift + R`）即可生效。
+
+可用环境变量：
+
+| 变量 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `DSH_BACKGROUND_FILE` | `/root/.dsh/background.jpg` | 背景图路径，支持 jpg/png/webp/gif/svg（≤ 32 MB） |
+| `DSH_BACKGROUND_URL` | 空 | 外部图片 URL，非空时优先于本地文件 |
+| `DSH_BACKGROUND_SIZE` | `cover` | `cover` / `contain` / `auto` |
+| `DSH_BACKGROUND_POSITION` | `center` | 同 CSS `background-position` |
+| `DSH_BACKGROUND_LAYER_ALPHA` | `0.72` | 面板不透明度 0–1，越小背景越明显，越大文字越清晰 |
+| `DSH_BACKGROUND_DIM` | `0` | 压暗背景 0–0.9，用于提升文字可读性 |
+| `DSH_BACKGROUND_BLUR` | `0` | 面板毛玻璃像素值，0 为关闭 |
+| `DSH_BACKGROUND_ENABLED` | `auto` | `auto` / `true` / `false`，`false` 强制关闭 |
+| `DSH_BACKGROUND_CSS` | 空 | 高级：自定义 CSS 文件路径，存在时完全替换默认注入 |
+
+> 实现方式是覆盖上游 `--dsw-alias-bg-*` 主题变量并配合 `!important`，明暗主题切换不受影响。
+> 若图片文件不存在且未配置 URL，代理**不会注入任何内容**，行为与官方镜像完全一致。
+
+---
+
 ## 🛠️ 项目结构
 
 ```text

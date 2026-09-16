@@ -19,4 +19,8 @@
   <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
   <Config Name="时区" Target="TZ" Default="Asia/Shanghai" Mode="env" Description="容器时区" Type="Variable" Display="always" Required="false" Mask="false">Asia/Shanghai</Config>
   <Config Name="DSH 内部端口" Target="DSH_PORT" Default="3018" Mode="env" Description="DSH 核心实际监听端口" Type="Variable" Display="advanced" Required="false" Mask="false">3018</Config>
+  <Config Name="背景图路径" Target="DSH_BACKGROUND_FILE" Default="/root/.dsh/background.jpg" Mode="env" Description="WebUI 背景图，放在配置目录内；留空或文件不存在则不启用背景" Type="Variable" Display="advanced" Required="false" Mask="false">/root/.dsh/background.jpg</Config>
+  <Config Name="背景图填充" Target="DSH_BACKGROUND_SIZE" Default="cover" Mode="env" Description="背景填充方式：cover 铺满、contain 完整显示、auto 原始尺寸" Type="Variable" Display="advanced" Required="false" Mask="false">cover</Config>
+  <Config Name="背景面板不透明度" Target="DSH_BACKGROUND_LAYER_ALPHA" Default="0.72" Mode="env" Description="面板不透明度 0-1，越小背景越明显，越大文字越清晰" Type="Variable" Display="advanced" Required="false" Mask="false">0.72</Config>
+  <Config Name="背景图地址" Target="DSH_BACKGROUND_URL" Default="" Mode="env" Description="可选，外部图片 URL，填写后优先于本地背景图文件" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

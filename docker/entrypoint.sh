@@ -35,6 +35,11 @@ if [ -n "${DSH_PROXY_FILE:-}" ] && [ -f "$DSH_PROXY_FILE" ]; then
   cp -f "$DSH_PROXY_FILE" /app/proxy.cjs
 fi
 
+# 背景图为可选增强：仅在文件存在时由代理自动注入样式，缺失时零改动。
+if [ -f "${DSH_BACKGROUND_FILE:-/root/.dsh/background.jpg}" ]; then
+  echo "[DSH-Proxy] 已启用 WebUI 背景图: ${DSH_BACKGROUND_FILE:-/root/.dsh/background.jpg}"
+fi
+
 node /app/proxy.cjs &
 PROXY_PID=$!
 trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT

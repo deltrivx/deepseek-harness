@@ -67,6 +67,29 @@ The bundled proxy listens on `0.0.0.0:3080`, so no extra Nginx, domain, or rever
 
 ---
 
+## 🎨 Custom WebUI Background (Optional)
+
+Upstream DSH only ships light/dark theme and font-size settings — **no background image support**. This image adds an optional background through the LAN proxy:
+
+1. Drop any image into the persistent directory as `background.jpg` (Unraid example: `/mnt/user/appdata/deepseek-harness/data/background.jpg`).
+2. Restart the container and hard-refresh the browser (`Cmd/Ctrl + Shift + R`).
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `DSH_BACKGROUND_FILE` | `/root/.dsh/background.jpg` | Image path; jpg/png/webp/gif/svg up to 32 MB |
+| `DSH_BACKGROUND_URL` | empty | External image URL; takes precedence over the local file |
+| `DSH_BACKGROUND_SIZE` | `cover` | `cover` / `contain` / `auto` |
+| `DSH_BACKGROUND_POSITION` | `center` | Same as CSS `background-position` |
+| `DSH_BACKGROUND_LAYER_ALPHA` | `0.72` | Panel opacity 0–1; lower shows more background |
+| `DSH_BACKGROUND_DIM` | `0` | Darkens the background 0–0.9 for readability |
+| `DSH_BACKGROUND_BLUR` | `0` | Panel frosted-glass blur in px; 0 disables it |
+| `DSH_BACKGROUND_ENABLED` | `auto` | `auto` / `true` / `false` |
+| `DSH_BACKGROUND_CSS` | empty | Advanced: path to custom CSS that fully replaces the default injection |
+
+> The injection overrides the upstream `--dsw-alias-bg-*` theme tokens with `!important`, so light/dark switching keeps working. When no image file exists and no URL is set, the proxy injects nothing at all.
+
+---
+
 ## 📄 License
 
 - Licensed under the [MIT License](LICENSE).

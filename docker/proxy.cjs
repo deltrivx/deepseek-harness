@@ -8,8 +8,127 @@ const TARGET_HOST = "127.0.0.1";
 const PUBLIC_TITLE = "DeepSeek Harness";
 const CONFIG_FILE = process.env.DSH_CONFIG_FILE || path.join(process.env.DSH_HOME || "/root/.dsh", "settings.yaml");
 const MAX_CONFIG_BYTES = 1024 * 1024;
+const DSH_HOME = process.env.DSH_HOME || "/root/.dsh";
+const BACKGROUND_ROUTE = "/__dsh-background";
+const BACKGROUND_FILE = process.env.DSH_BACKGROUND_FILE || path.join(DSH_HOME, "background.jpg");
+const BACKGROUND_URL = (process.env.DSH_BACKGROUND_URL || "").trim();
+const BACKGROUND_SIZE = process.env.DSH_BACKGROUND_SIZE || "cover";
+const BACKGROUND_POSITION = process.env.DSH_BACKGROUND_POSITION || "center";
+const BACKGROUND_LAYER_ALPHA = process.env.DSH_BACKGROUND_LAYER_ALPHA;
+const BACKGROUND_DIM = process.env.DSH_BACKGROUND_DIM;
+const BACKGROUND_BLUR = process.env.DSH_BACKGROUND_BLUR;
+const BACKGROUND_ENABLED = (process.env.DSH_BACKGROUND_ENABLED || "auto").trim().toLowerCase();
+const BACKGROUND_CSS_FILE = (process.env.DSH_BACKGROUND_CSS || "").trim();
+const MAX_BACKGROUND_BYTES = 32 * 1024 * 1024;
 
 let activeCookie = "";
+
+function clampUnit(raw, fallback, min, max) {
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function alpha(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function cssUrl(value) {
+  return String(value).replace(/["\\\r\n]/g, "");
+}
+
+function backgroundMime(file) {
+  switch (path.extname(file).toLowerCase()) {
+    case ".png": return "image/png";
+    case ".webp": return "image/webp";
+    case ".gif": return "image/gif";
+    case ".svg": return "image/svg+xml";
+    default: return "image/jpeg";
+  }
+}
+
+function resolveBackground() {
+  if (BACKGROUND_ENABLED === "false") return null;
+  if (BACKGROUND_URL) return { url: cssUrl(BACKGROUND_URL), file: null };
+  try {
+    const stat = fs.statSync(BACKGROUND_FILE);
+    if (!stat.isFile() || stat.size > MAX_BACKGROUND_BYTES) return null;
+    return { url: `${BACKGROUND_ROUTE}?v=${Math.floor(stat.mtimeMs)}`, file: BACKGROUND_FILE };
+  } catch {
+    return null;
+  }
+}
+
+function buildBackgroundCss() {
+  const custom = BACKGROUND_CSS_FILE;
+  if (custom) {
+    try {
+      const css = fs.readFileSync(custom, "utf8");
+      if (css.trim()) return `<style id="dsh-background">${css}</style>`;
+    } catch {
+      return "";
+    }
+    return "";
+  }
+  const background = resolveBackground();
+  if (!background) return "";
+  const base = clampUnit(BACKGROUND_LAYER_ALPHA, 0.72, 0, 1);
+  const dim = clampUnit(BACKGROUND_DIM, 0, 0, 0.9);
+  const blur = Math.max(0, Number.parseFloat(BACKGROUND_BLUR) || 0);
+  const image = dim > 0
+    ? `linear-gradient(rgba(0,0,0,${alpha(dim)}),rgba(0,0,0,${alpha(dim)})),url("${background.url}")`
+    : `url("${background.url}")`;
+  const lightLayers = [
+    `--dsw-alias-bg-layer-1:rgba(255,255,255,${alpha(base)})`,
+    `--dsw-alias-bg-layer-2:rgba(255,255,255,${alpha(Math.min(1, base + 0.08))})`,
+    `--dsw-alias-bg-layer-3:rgba(255,255,255,${alpha(Math.min(1, base + 0.16))})`,
+    `--dsw-alias-bg-mask-1:rgba(15,18,25,${alpha(Math.min(1, 0.28 + dim))})`,
+  ].join(";");
+  const darkLayers = [
+    `--dsw-alias-bg-layer-1:rgba(28,28,30,${alpha(base)})`,
+    `--dsw-alias-bg-layer-2:rgba(38,38,41,${alpha(Math.min(1, base + 0.08))})`,
+    `--dsw-alias-bg-layer-3:rgba(48,48,52,${alpha(Math.min(1, base + 0.16))})`,
+    `--dsw-alias-bg-mask-1:rgba(0,0,0,${alpha(Math.min(1, 0.4 + dim))})`,
+  ].join(";");
+  const blurRule = blur > 0
+    ? `main,aside,section,nav{backdrop-filter:blur(${blur}px) !important;-webkit-backdrop-filter:blur(${blur}px) !important;}`
+    : "";
+  const css = [
+    `html,body{background-image:${image} !important;background-size:${cssUrl(BACKGROUND_SIZE)} !important;background-position:${cssUrl(BACKGROUND_POSITION)} !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}`,
+    `body{background-color:transparent !important;}`,
+    `:root,html,body{--dsw-alias-bg-base:transparent !important;${lightLayers}}`,
+    `body[data-ds-dark-theme]{${darkLayers}}`,
+    blurRule,
+  ].join("");
+  return `<style id="dsh-background">${css}</style>`;
+}
+
+function handleBackgroundRoute(req, res) {
+  const pathname = String(req.url || "").split("?")[0];
+  if (pathname !== BACKGROUND_ROUTE) return false;
+  try {
+    const stat = fs.statSync(BACKGROUND_FILE);
+    if (!stat.isFile()) throw new Error("not a file");
+    res.writeHead(200, {
+      "content-type": backgroundMime(BACKGROUND_FILE),
+      "content-length": stat.size,
+      "cache-control": "public, max-age=300",
+      etag: `"${stat.size}-${Math.floor(stat.mtimeMs)}"`,
+    });
+    if (req.method === "HEAD") {
+      res.end();
+      return true;
+    }
+    fs.createReadStream(BACKGROUND_FILE)
+      .on("error", () => res.destroy())
+      .pipe(res);
+    return true;
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    res.end("background image not available");
+    return true;
+  }
+}
 
 function tryLogin(token) {
   if (!token) return;
@@ -50,7 +169,7 @@ function rewriteHtml(body) {
   const bridge = `<script>(function(){document.title="${PUBLIC_TITLE}";new MutationObserver(function(){if(document.title!=="${PUBLIC_TITLE}")document.title="${PUBLIC_TITLE}"}).observe(document.querySelector("head")||document.documentElement,{subtree:true,childList:true,characterData:true});document.addEventListener("click",function(e){var b=e.target&&e.target.closest?e.target.closest("button"):null;if(!b)return;var t=(b.innerText||b.textContent||"").trim();if(t.indexOf("打开配置文件")>=0||/open\\s+config/i.test(t)){e.preventDefault();e.stopImmediatePropagation();location.assign("/__dsh-config");}},true)})()</script>`;
   let rewritten = text.replace(/<title>[^<]*<\/title>/i, `<title>${PUBLIC_TITLE}</title>`);
   if (!/<title>[^<]*<\/title>/i.test(text)) rewritten = rewritten.replace(/<head[^>]*>/i, (head) => `${head}<title>${PUBLIC_TITLE}</title>`);
-  if (/<\/head>/i.test(rewritten) && !rewritten.includes("/__dsh-config")) rewritten = rewritten.replace(/<\/head>/i, `${bridge}</head>`);
+  if (/<\/head>/i.test(rewritten) && !rewritten.includes("/__dsh-config")) rewritten = rewritten.replace(/<\/head>/i, `${buildBackgroundCss()}${bridge}</head>`);
   return Buffer.from(rewritten);
 }
 
@@ -142,6 +261,7 @@ function forwardResponse(req, res, proxyRes) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (handleBackgroundRoute(req, res)) return;
   if (await handleConfigRoute(req, res)) return;
   let urlObj;
   try {

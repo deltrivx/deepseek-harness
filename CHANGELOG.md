@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-Architecture CI**: Configured GitHub Actions workflow for building and publishing `linux/amd64` and `linux/arm64` container images to GHCR.
 - **NAS & Private Cloud Templates**: Added ready-to-use Unraid CA XML template and `docker-compose.yml` deployment files.
 - **Asset Branding**: Added official high-resolution vector icon (`assets/icon.svg`).
+- **Optional WebUI Background**: The LAN proxy can now inject a wallpaper behind the WebUI. Drop an image at `/root/.dsh/background.jpg` (or point `DSH_BACKGROUND_URL` at a remote one) and it is served at `/__dsh-background`; upstream `--dsw-alias-bg-*` theme tokens are overridden with `!important` so light/dark switching keeps working. Tunable via `DSH_BACKGROUND_FILE`, `DSH_BACKGROUND_URL`, `DSH_BACKGROUND_SIZE`, `DSH_BACKGROUND_POSITION`, `DSH_BACKGROUND_LAYER_ALPHA`, `DSH_BACKGROUND_DIM`, `DSH_BACKGROUND_BLUR`, `DSH_BACKGROUND_ENABLED`, `DSH_BACKGROUND_CSS`. When no image is present the proxy injects nothing, so behaviour stays identical to the official image.
 
 ### Fixed
 - Prevented browser disconnects from propagating as unhandled `ECONNRESET` errors in the LAN proxy.
