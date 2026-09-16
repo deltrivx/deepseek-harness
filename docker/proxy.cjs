@@ -388,37 +388,38 @@ function appearancePanelScript() {
     " {k:'inputAlpha',t:'配置页输入框底色',min:0,max:1,step:0.01,u:'pct',adv:1},",
     " {k:'dim',t:'壁纸压暗',min:0,max:0.9,step:0.05,u:'num',adv:1}",
     "];",
-    "var SIZES=['cover','contain','100% 100%','auto'],POSES=['center','top','bottom','left','right','top left','top right'];",
+    // [value, 中文标签]
+    "var SIZES=[['cover','铺满（裁剪）'],['contain','完整显示'],['100% 100%','拉伸铺满'],['auto','原始尺寸']],POSES=[['center','居中'],['top','顶部'],['bottom','底部'],['left','左侧'],['right','右侧'],['top left','左上'],['top right','右上']];",
     // The script is injected before </head>, so document.body may not exist yet.
     "function boot(){",
     "if(window.__dshuBooted)return;window.__dshuBooted=1;",
     "var st=document.createElement('style');",
-    "st.textContent='#dshu-wrap{position:fixed;right:16px;bottom:16px;z-index:2147483000;font:13px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",system-ui,sans-serif;color:#1f2328}'" +
+    // Colours come from the same --dsw-* tokens the app uses, so the launcher
+    // and the panel pick up whatever translucency the theme/wallpaper has and
+    // follow light/dark automatically. Literal values are only fallbacks for
+    // when the theme has not been applied yet.
+    "st.textContent='#dshu-wrap{position:fixed;right:16px;bottom:16px;z-index:2147483000;font:13px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",system-ui,sans-serif;color:var(--dsw-alias-label-primary,#1f2328)}'" +
       "+'#dshu-wrap *{box-sizing:border-box}'" +
-      "+'#dshu-btn{width:40px;height:40px;padding:0;border-radius:50%;border:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.82);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer;color:#1f2328;display:flex;align-items:center;justify-content:center;margin-left:auto}'" +
+      "+'#dshu-btn{width:40px;height:40px;padding:0;border-radius:50%;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.82));-webkit-backdrop-filter:blur(16px) saturate(1.08);backdrop-filter:blur(16px) saturate(1.08);box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer;color:inherit;display:flex;align-items:center;justify-content:center;margin-left:auto}'" +
       "+'#dshu-wrap.open #dshu-btn{display:none}'" +
       "+'#dshu-wrap #dshu-btn svg{width:20px;height:20px;display:block}'" +
-      "+'#dshu-panel{display:none;width:290px;max-height:74vh;overflow:auto;margin-top:8px;padding:14px;border-radius:14px;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.08);box-shadow:0 10px 36px rgba(0,0,0,.2)}'" +
+      "+'#dshu-panel{display:none;width:290px;max-height:74vh;overflow:auto;margin-top:8px;padding:14px;border-radius:14px;background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.88));-webkit-backdrop-filter:blur(20px) saturate(1.08);backdrop-filter:blur(20px) saturate(1.08);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));box-shadow:0 10px 36px rgba(0,0,0,.2)}'" +
       "+'#dshu-panel.open{display:block}'" +
       "+'#dshu-head{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:10px}'" +
       "+'#dshu-close{cursor:pointer;opacity:.6;padding:0 4px}'" +
       "+'.dshu-row{margin:0 0 10px}'" +
       "+'.dshu-labs{display:flex;justify-content:space-between;font-size:12px;opacity:.85;margin-bottom:2px}'" +
       "+'#dshu-wrap input[type=range]{width:100%;margin:0}'" +
-      "+'#dshu-wrap select{width:100%;padding:4px 6px;border-radius:6px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.9);color:inherit;font:inherit}'" +
+      "+'#dshu-wrap select{width:100%;padding:4px 6px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.15));background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.9));color:inherit;font:inherit}'" +
       "+'#dshu-sel{margin:6px 0 10px}'" +
       "+'#dshu-sel label{display:block;font-size:12px;opacity:.85;margin:6px 0 2px}'" +
       "+'#dshu-ops{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}'" +
-      "+'#dshu-ops button{flex:1 1 44%;padding:6px 8px;border-radius:8px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.9);color:inherit;cursor:pointer;font:inherit}'" +
-      "+'#dshu-ops button.p{background:#0969da;color:#fff;border-color:#0969da}'" +
+      "+'#dshu-ops button{flex:1 1 44%;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.15));background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.9));color:inherit;cursor:pointer;font:inherit}'" +
+      "+'#dshu-ops button.p{background:var(--dsw-alias-brand-primary,#0969da);color:#fff;border-color:var(--dsw-alias-brand-primary,#0969da)}'" +
       "+'#dshu-adv{margin-top:8px}'" +
       "+'#dshu-adv-toggle{font-size:12px;opacity:.7;cursor:pointer;margin:8px 0 6px;display:inline-block}'" +
       "+'#dshu-msg{font-size:12px;opacity:.8;margin-top:8px;min-height:16px}'" +
-      "+'#dshu-file{display:none}'" +
-      "+'body[data-ds-dark-theme] #dshu-wrap{color:#e6e6e6}'" +
-      "+'body[data-ds-dark-theme] #dshu-btn{background:rgba(40,40,44,.82);border-color:rgba(255,255,255,.14);color:#e6e6e6}'" +
-      "+'body[data-ds-dark-theme] #dshu-panel{background:rgba(32,32,36,.88);border-color:rgba(255,255,255,.14)}'" +
-      "+'body[data-ds-dark-theme] #dshu-wrap select,body[data-ds-dark-theme] #dshu-ops button{background:rgba(50,50,56,.9);border-color:rgba(255,255,255,.18);color:#e6e6e6}';",
+      "+'#dshu-file{display:none}';",
     "document.head.appendChild(st);",
     "var wrap=document.createElement('div');wrap.id='dshu-wrap';",
     "wrap.innerHTML='<button id=\"dshu-btn\" type=\"button\" title=\"外观设置\" aria-label=\"外观设置\">'" +
@@ -462,8 +463,8 @@ function appearancePanelScript() {
     " var sel=wrap.querySelector('#dshu-sel');",
     " sel.innerHTML='<label>填充方式<select id=\"dshu-size\"></select></label><label>位置<select id=\"dshu-pos\"></select></label>';",
     " var ss=sel.querySelector('#dshu-size'),sp=sel.querySelector('#dshu-pos');",
-    " SIZES.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;ss.appendChild(o)});",
-    " POSES.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sp.appendChild(o)});",
+    " SIZES.forEach(function(v){var o=document.createElement('option');o.value=v[0];o.textContent=v[1];ss.appendChild(o)});",
+    " POSES.forEach(function(v){var o=document.createElement('option');o.value=v[0];o.textContent=v[1];sp.appendChild(o)});",
     " ss.value=C.size;sp.value=C.position;",
     " ss.onchange=function(){C.size=ss.value;deb()};",
     " sp.onchange=function(){C.position=sp.value;deb()};",
