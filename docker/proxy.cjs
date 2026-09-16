@@ -326,8 +326,9 @@ function renderAppearanceCss(cfg) {
     `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:8px !important;margin-right:8px !important;padding:10px 12px !important;}`,
     // Message column container: it's the rectangular layer-1 background behind
     // every conversation card. Round its corners and align its width to the
-    // composer input card (712px) so cards + input share one width.
-    `[class*="column_4SmsrG"],[class*="Column_4SmsrG"]{border-radius:22px !important;width:712px !important;max-width:712px !important;}`,
+    // composer input card (712px) so cards + input share one width. The
+    // composer width itself is NOT touched (workspace width unchanged).
+    `[class~="_4SmsrG_column"]{border-radius:22px !important;width:712px !important;max-width:712px !important;}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
   // hand-written tweaks keep winning over the panel.
