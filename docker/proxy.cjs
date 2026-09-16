@@ -86,9 +86,9 @@ function buildTokenCss(surfaceAlpha, subtleAlpha) {
   const snapshot = names.map((name, index) => `--dsw-bgw-${index}:var(${name})`).join(";");
   const override = names
     .map((name, index) => {
-      if (index === 0) return `${name}:transparent`;
+      if (index === 0) return `${name}:transparent !important`;
       const percent = Math.round((index < SURFACE_TOKENS.length ? surfaceAlpha : subtleAlpha) * 100);
-      return `${name}:color-mix(in srgb,var(--dsw-bgw-${index}) ${percent}%,transparent)`;
+      return `${name}:color-mix(in srgb,var(--dsw-bgw-${index}) ${percent}%,transparent) !important`;
     })
     .join(";");
   return `body{${snapshot}}body *{${override}}`;
