@@ -16,7 +16,7 @@ ARG DSH_REF=""
 RUN if [ -n "$DSH_REF" ]; then       git clone --depth=1 --branch "$DSH_REF" https://github.com/deepseek-ai/deepseek-harness.git /app 2>/dev/null ||       git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app;     else       git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app;     fi
 
 RUN pnpm install
-RUN pnpm build
+RUN pnpm run build:official
 
 FROM node:22-bookworm-slim AS runner
 
