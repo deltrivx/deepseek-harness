@@ -323,7 +323,7 @@ function renderAppearanceCss(cfg) {
     // "_markdown_1wejo_*" is the file-type icon for .md files (it sits next to
     // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
     // must be excluded or every .md file chip would get a card around it.
-    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:8px !important;margin-right:8px !important;padding:10px 20px !important;}`,
+    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:0 !important;margin-right:0 !important;padding:10px 14px !important;}`,
     // Message column container ("直角背景"): round its corners and lock its
     // width to the visible composer card so the two panels always share the
     // exact same width, regardless of viewport or upstream CSS variable changes.
