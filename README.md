@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icon.svg" alt="DeepSeek Harness Logo" width="120" height="120" />
+<img src="assets/icon.png" alt="DeepSeek Harness Logo" width="120" height="120" />
 
 # DeepSeek Harness (DSH) Docker 增强版
 
@@ -120,8 +120,7 @@ deepseek-harness/
 │   └── workflows/
 │       └── docker-build-ghcr.yml   # 自动化多架构构建与多版本发布工作流
 ├── assets/
-│   ├── icon.svg                    # 官方高精度矢量图标
-│   └── icon.png                    # 256x256 高清点阵图标（兼容 Unraid 等 NAS 系统）
+│   └── icon.png                    # 256x256 高清点阵图标（完美兼容 NAS 与各平台）
 ├── docker/
 │   ├── Dockerfile                  # Node 22 环境与多阶段纯净构建定义
 │   ├── entrypoint.sh               # 容器初始化守护进程
