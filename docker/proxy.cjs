@@ -320,7 +320,10 @@ function renderAppearanceCss(cfg) {
     `body[data-ds-dark-theme] textarea,body[data-ds-dark-theme] input,body[data-ds-dark-theme] select{background-color:rgba(28,28,30,${alpha(Math.min(1, base.inputAlpha * 1.4))}) !important;color:#e6e6e6 !important;}`,
     // Conversation / answer blocks: card-like, inset from both sides, rounded,
     // using the same surface token as the rest of the workspace.
-    `[class*="markdown"],[class*="Markdown"]{background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:12px !important;margin-left:12px !important;margin-right:12px !important;padding:10px 12px !important;}`,
+    // "_markdown_1wejo_*" is the file-type icon for .md files (it sits next to
+    // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
+    // must be excluded or every .md file chip would get a card around it.
+    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:12px !important;margin-left:12px !important;margin-right:12px !important;padding:10px 12px !important;}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
   // hand-written tweaks keep winning over the panel.
