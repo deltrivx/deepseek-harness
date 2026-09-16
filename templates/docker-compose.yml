@@ -1,6 +1,6 @@
 services:
   deepseek-harness:
-    image: ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1
+    image: ghcr.io/deltrivx/deepseek-harness:latest
     container_name: deepseek-harness
     restart: unless-stopped
     ports:
