@@ -52,7 +52,7 @@
 ```yaml
 services:
   deepseek-harness:
-    image: ghcr.io/deltrivx/deepseek-harness:latest # 或指定具体版本号
+    image: ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1 # 或 latest
     container_name: deepseek-harness
     restart: unless-stopped
     ports:
@@ -84,7 +84,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -v /mnt/user/appdata/deepseek-harness/data:/root/.dsh \
   -v /mnt/user/appdata/deepseek-harness/workspace:/workspace \
-  ghcr.io/deltrivx/deepseek-harness:latest
+  ghcr.io/deltrivx/deepseek-harness:v0.1.6-alpha.1
 ```
 
 启动完成后，打开浏览器访问：`http://<宿主机IP>:3080` 即可畅享 DeepSeek Harness。
