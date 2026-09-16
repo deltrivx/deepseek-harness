@@ -83,7 +83,7 @@ let activeCookie = "";
 
 function buildTokenCss(surfaceAlpha, subtleAlpha) {
   const names = SURFACE_TOKENS.concat(SUBTLE_TOKENS);
-  const snapshot = names.map((name, index) => `--dsw-bgw-${index}:var(${name})`).join(";");
+  const snapshot = `--dsw-bgw-layer1:var(--dsw-alias-bg-layer-1);` + names.map((name, index) => `--dsw-bgw-${index}:var(${name})`).join(";");
   const override = names
     .map((name, index) => {
       if (index === 0) return `${name}:transparent !important`;
@@ -130,12 +130,12 @@ function resolveBackground() {
   }
 }
 
-function buildBackgroundCss() {
+function buildBackgroundCssBody() {
   const custom = BACKGROUND_CSS_FILE;
   if (custom) {
     try {
       const css = fs.readFileSync(custom, "utf8");
-      if (css.trim()) return `<style id="dsh-background">${css}</style>`;
+      if (css.trim()) return css;
     } catch {
       return "";
     }
@@ -150,16 +150,25 @@ function buildBackgroundCss() {
     ? `linear-gradient(rgba(0,0,0,${alpha(dim)}),rgba(0,0,0,${alpha(dim)})),url("${background.url}")`
     : `url("${background.url}")`;
   const subtle = Math.min(1, base + 0.2);
+  const percent = Math.round(base * 100);
   const blurRule = blur > 0
     ? `main,aside,section,nav{backdrop-filter:blur(${blur}px) !important;-webkit-backdrop-filter:blur(${blur}px) !important;}`
     : "";
-  const css = [
+  // Name-agnostic safety net: hashed CSS-module class names still carry the
+  // original words, so this keeps working even if upstream renames tokens.
+  const containerRule = `[class*="sidebar"],[class*="Sidebar"],[class*="side-bar"],[class*="drawer"],[class*="Drawer"],[class*="panel"],[class*="Panel"],[class*="column"],[class*="Column"],aside,nav,main,[role="navigation"],[role="complementary"],[role="dialog"]{background-color:color-mix(in srgb,var(--dsw-bgw-layer1) ${percent}%,transparent) !important;}`;
+  return [
     `html,body{background-image:${image} !important;background-size:${cssUrl(BACKGROUND_SIZE)} !important;background-position:${cssUrl(BACKGROUND_POSITION)} !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}`,
     `html,body{background-color:transparent !important;}`,
     buildTokenCss(base, subtle),
+    containerRule,
     blurRule,
   ].join("");
-  return `<style id="dsh-background">${css}</style>`;
+}
+
+function buildBackgroundCss() {
+  const css = buildBackgroundCssBody();
+  return css ? `<style id="dsh-background">${css}</style>` : "";
 }
 
 function handleBackgroundRoute(req, res) {
@@ -267,7 +276,7 @@ function sendConfigPage(req, res) {
   let content = "";
   let error = "";
   try { content = fs.readFileSync(CONFIG_FILE, "utf8"); } catch (err) { error = err.message; }
-  const body = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeepSeek Harness 配置</title><style>body{font:14px system-ui,sans-serif;margin:0;background:#f5f6f8;color:#1f2328}main{max-width:1100px;margin:24px auto;padding:20px;background:#fff;border:1px solid #d0d7de;border-radius:12px}textarea{width:100%;min-height:65vh;box-sizing:border-box;font:13px ui-monospace,monospace;padding:12px;border:1px solid #8c959f;border-radius:8px}button{padding:8px 16px;border:1px solid #8c959f;border-radius:8px;background:#fff;cursor:pointer}button.primary{background:#0969da;color:#fff;border-color:#0969da}.bar{display:flex;gap:10px;align-items:center;margin:12px 0}.muted{color:#656d76}.error{color:#cf222e;white-space:pre-wrap}</style></head><body><main><h1>DeepSeek Harness 配置</h1><p class="muted">浏览器编辑回退：${escapeHtml(CONFIG_FILE)}。保存前会自动创建 .bak 备份。</p>${error ? `<p class="error">无法读取配置文件：${escapeHtml(error)}</p>` : ""}<textarea id="config" spellcheck="false">${escapeHtml(content)}</textarea><div class="bar"><button class="primary" id="save">保存配置</button><button id="back">返回 WebUI</button><span id="status" class="muted"></span></div></main><script>const status=document.getElementById("status");document.getElementById("back").onclick=()=>location.assign("/");document.getElementById("save").onclick=async()=>{status.textContent="保存中...";try{const r=await fetch("/__dsh-config",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:document.getElementById("config").value})});const j=await r.json();status.textContent=j.ok?"已保存，重启容器后生效":(j.error||"保存失败")}catch(e){status.textContent="保存失败："+e.message}};</script></body></html>`;
+  const body = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeepSeek Harness 配置</title><style>body{font:14px system-ui,sans-serif;margin:0;background:#f5f6f8;color:#1f2328}main{max-width:1100px;margin:24px auto;padding:20px;background:#fff;border:1px solid #d0d7de;border-radius:12px}textarea{width:100%;min-height:65vh;box-sizing:border-box;font:13px ui-monospace,monospace;padding:12px;border:1px solid #8c959f;border-radius:8px}button{padding:8px 16px;border:1px solid #8c959f;border-radius:8px;background:#fff;cursor:pointer}button.primary{background:#0969da;color:#fff;border-color:#0969da}.bar{display:flex;gap:10px;align-items:center;margin:12px 0}.muted{color:#656d76}.error{color:#cf222e;white-space:pre-wrap}</style>${buildBackgroundCss()}</head><body><main><h1>DeepSeek Harness 配置</h1><p class="muted">浏览器编辑回退：${escapeHtml(CONFIG_FILE)}。保存前会自动创建 .bak 备份。</p>${error ? `<p class="error">无法读取配置文件：${escapeHtml(error)}</p>` : ""}<textarea id="config" spellcheck="false">${escapeHtml(content)}</textarea><div class="bar"><button class="primary" id="save">保存配置</button><button id="back">返回 WebUI</button><span id="status" class="muted"></span></div></main><script>const status=document.getElementById("status");document.getElementById("back").onclick=()=>location.assign("/");document.getElementById("save").onclick=async()=>{status.textContent="保存中...";try{const r=await fetch("/__dsh-config",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({content:document.getElementById("config").value})});const j=await r.json();status.textContent=j.ok?"已保存，重启容器后生效":(j.error||"保存失败")}catch(e){status.textContent="保存失败："+e.message}};</script></body></html>`;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
   res.end(body);
 }
