@@ -1,0 +1,95 @@
+name: Auto Sync Upstream & Release
+
+on:
+  schedule:
+    # 每天定时检查 4 次（每 6 小时一次）
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Query Upstream Latest Release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          UPSTREAM_TAG=$(gh api repos/deepseek-ai/deepseek-harness/releases --jq ".[0].tag_name")
+          echo "Raw upstream tag: $UPSTREAM_TAG"
+
+          if [ -z "$UPSTREAM_TAG" ] || [ "$UPSTREAM_TAG" = "null" ]; then
+            echo "Failed to fetch upstream release tag."
+            exit 1
+          fi
+
+          # 规范化版本号: dsh-v0.1.6-alpha.1 -> v0.1.6-alpha.1
+          CLEAN_VER=$(echo "$UPSTREAM_TAG" | sed -E "s/^dsh-//")
+          if [[ ! "$CLEAN_VER" =~ ^v ]]; then
+            CLEAN_VER="v${CLEAN_VER}"
+          fi
+          echo "Normalized version: $CLEAN_VER"
+          echo "tag=$CLEAN_VER" >> $GITHUB_OUTPUT
+          echo "raw_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+          # 获取上游对应 Release 的发布详情
+          UPSTREAM_NAME=$(gh api repos/deepseek-ai/deepseek-harness/releases --jq ".[0].name")
+          UPSTREAM_BODY=$(gh api repos/deepseek-ai/deepseek-harness/releases --jq ".[0].body")
+          IS_PRERELEASE=$(gh api repos/deepseek-ai/deepseek-harness/releases --jq ".[0].prerelease")
+          
+          echo "name=$UPSTREAM_NAME" >> $GITHUB_OUTPUT
+          echo "prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          
+          # 保存 body 到临时文件防格式转义问题
+          echo "$UPSTREAM_BODY" > /tmp/upstream_body.txt
+
+      - name: Check Existing Local Release
+        id: local_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists in our repository. Skipping build."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "New upstream version found: $TAG. Proceeding with release!"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create New Aligned Release
+        if: steps.local_check.outputs.exists == false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+          RAW_TAG="${{ steps.upstream.outputs.raw_tag }}"
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.upstream.outputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          cat << EOF > /tmp/release_notes.md
+### 🚀 严格对齐上游官方自动发布
+- **上游对应版本**: `${RAW_TAG}`
+- **全平台 NAS 增强**：
+  - 内置原生 Node.js 流式代理，解除单机 127.0.0.1 访问限制；
+  - 自动编译多架构 `linux/amd64` 与 `linux/arm64` 容器镜像；
+  - 附带 Unraid 原生应用模板与 256x256 高清 PNG 图标。
+
+---
+### 官方上游更新日志：
+EOF
+          cat /tmp/upstream_body.txt >> /tmp/release_notes.md
+
+          gh release create "$TAG"             --title "$TAG (Upstream Official Sync)"             --notes-file /tmp/release_notes.md             $PRERELEASE_FLAG
