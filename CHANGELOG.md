@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Prevented browser disconnects from propagating as unhandled `ECONNRESET` errors in the LAN proxy.
+- **In-page Appearance Panel**: a floating button in the bottom-right corner of the main page now controls the wallpaper end to end — enable switch, surface / sidebar / subtle opacity, frosted-glass blur, wallpaper dimming, sizing and position, plus config-page tints. Sliders preview live by rebuilding `/__dsh-appearance.css?...`, so nothing is written until **Save**. Configuration is persisted to `appearance.json` next to the wallpaper and survives container rebuilds; **Change image** uploads a replacement (≤ 32 MB, JPEG/PNG/GIF/WebP magic-byte validated). Saving and uploading reuse the WebUI login state; unauthenticated visitors can only preview.
 - Stopped stale persisted `proxy.cjs` files from silently overriding the fixed image proxy unless `DSH_PROXY_FILE` is explicitly set.
 - Normalized the WebUI document title to `DeepSeek Harness` and documented direct LAN access without an extra reverse proxy.
 - Added a protected browser-based settings editor at `/__dsh-config` for headless Unraid deployments where native configuration-file opening is unavailable; writes are atomic and create timestamped backups.

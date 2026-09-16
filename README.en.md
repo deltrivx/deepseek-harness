@@ -88,6 +88,24 @@ Upstream DSH only ships light/dark theme and font-size settings — **no backgro
 
 > The injection overrides the upstream `--dsw-alias-bg-*` theme tokens with `!important`, so light/dark switching keeps working. When no image file exists and no URL is set, the proxy injects nothing at all.
 
+### 🪄 In-page Appearance Panel (recommended)
+
+A floating **外观 / Appearance** button sits in the bottom-right corner of the main page. It exposes the background switch, surface / sidebar / subtle opacity, frosted-glass blur, wallpaper dimming, sizing and position, plus advanced items such as the config-page tints.
+
+- Dragging a slider **previews instantly** — nothing is written to disk and no reload happens.
+- **Save** persists to `appearance.json` next to `background.jpg`, so it survives container rebuilds.
+- **Revert** restores the last saved values, **Reset** restores built-in defaults.
+- **Change image** uploads a local picture (≤ 32 MB, JPEG/PNG/GIF/WebP validated) and replaces `background.jpg`.
+
+Saving and uploading require an authenticated session (the WebUI login is reused); without it you can still preview locally.
+
+| Route | Purpose |
+| :--- | :--- |
+| `GET /__dsh-appearance.css` | Renders the current stylesheet; query parameters render a preview |
+| `GET /__dsh-appearance` | Reads the saved configuration (auth required) |
+| `POST /__dsh-appearance` | Saves the configuration (auth required) |
+| `POST /__dsh-appearance/background` | Uploads a new wallpaper (auth required) |
+
 ---
 
 ## 📄 License
