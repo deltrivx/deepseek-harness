@@ -21,6 +21,7 @@ FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
+# 安装 git, curl, ca-certificates 等基础依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -32,18 +33,15 @@ RUN npm install -g pnpm@9
 COPY --from=builder /app /app
 
 COPY docker/proxy.cjs /app/proxy.cjs
-COPY docker/edge-proxy.cjs /app/edge-proxy.cjs
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3018 3180
+EXPOSE 3080 3018
 
 ENV NODE_ENV=production
 ENV DSH_HOME=/root/.dsh
+ENV PORT=3080
 ENV DSH_PORT=3018
-# DSH_WEB_TOKEN 预留（当前 dsh web 不读取，token 由 DSH 随机生成并由 entrypoint 持久化）
-ENV DSH_WEB_TOKEN=
-ENV EDGE_PORT=3180
 
 VOLUME ["/root/.dsh", "/workspace"]
 
