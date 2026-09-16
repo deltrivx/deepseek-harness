@@ -21,7 +21,78 @@ const BACKGROUND_ENABLED = (process.env.DSH_BACKGROUND_ENABLED || "auto").trim()
 const BACKGROUND_CSS_FILE = (process.env.DSH_BACKGROUND_CSS || "").trim();
 const MAX_BACKGROUND_BYTES = 32 * 1024 * 1024;
 
+// The theme presenter writes every --dsw-* token onto document.body as inline
+// style, and portals (dialogs, tooltips, menus) live outside #root. So the
+// overrides cannot target a single element: body keeps the originals (snapshot
+// into --dsw-bgw-N) while every descendant re-derives them with color-mix.
+// This stays adaptive to light/dark without hardcoding any palette.
+const SURFACE_TOKENS = [
+  "--dsw-alias-bg-base",
+  "--dsw-alias-bg-l1",
+  "--dsw-alias-bg-l2",
+  "--dsw-alias-bg-layer-1",
+  "--dsw-alias-bg-layer-2",
+  "--dsw-alias-bg-layer-3",
+  "--dsw-alias-bg-layer-4",
+  "--dsw-alias-bg-overlay",
+  "--dsw-alias-bg-module-platform",
+  "--dsw-alias-bg-multi-select",
+  "--dsw-alias-bg-skeleton",
+  "--dsw-alias-markdown-code-block",
+  "--dsw-alias-markdown-code-block-banner",
+  "--dsw-alias-markdown-code-segment-selected",
+  "--dsw-alias-markdown-code-segment-unselected",
+  "--dsw-alias-markdown-inline-code",
+  "--dsw-alias-markdown-citation",
+  "--dsw-alias-markdown-placeholder",
+  "--dsw-alias-markdown-tag",
+  "--dsw-specific-sidebar-fill",
+  "--dsw-specific-sidebar-nav-item-active",
+  "--dsw-specific-sidebar-nav-item-active-accent",
+  "--dsw-specific-sidebar-nav-item-hover",
+  "--dsw-specific-menu",
+  "--dsw-specific-bubble",
+  "--dsw-specific-bubble-highlight",
+  "--dsw-specific-input-major",
+  "--dsw-specific-login-input",
+  "--dsw-alias-fill-l2",
+  "--dsw-alias-fill-tertiary",
+  "--dsw-alias-fill-tsp-secondary",
+  "--dsw-alias-toast-bg",
+  "--dsw-alias-tooltip-bg",
+  "--dsw-hovercard-bg",
+];
+
+// Hover / scrollbar / toolbar fills are already subtle; only nudge them so
+// interactive affordances do not disappear.
+const SUBTLE_TOKENS = [
+  "--dsw-alias-interactive-bg-active",
+  "--dsw-alias-interactive-bg-hover",
+  "--dsw-alias-interactive-bg-hover-accent",
+  "--dsw-alias-interactive-bg-hover-danger",
+  "--dsw-alias-interactive-bg-hover-solid",
+  "--dsw-alias-scrollbar-bg-l1",
+  "--dsw-alias-scrollbar-bg-l2",
+  "--dsw-alias-button-elevated-fill",
+  "--dsw-alias-button-floating-fill",
+  "--dsw-alias-button-tool-bar-fill",
+  "--dsw-alias-button-ghost-active-fill",
+];
+
 let activeCookie = "";
+
+function buildTokenCss(surfaceAlpha, subtleAlpha) {
+  const names = SURFACE_TOKENS.concat(SUBTLE_TOKENS);
+  const snapshot = names.map((name, index) => `--dsw-bgw-${index}:var(${name})`).join(";");
+  const override = names
+    .map((name, index) => {
+      if (index === 0) return `${name}:transparent`;
+      const percent = Math.round((index < SURFACE_TOKENS.length ? surfaceAlpha : subtleAlpha) * 100);
+      return `${name}:color-mix(in srgb,var(--dsw-bgw-${index}) ${percent}%,transparent)`;
+    })
+    .join(";");
+  return `body{${snapshot}}body *{${override}}`;
+}
 
 function clampUnit(raw, fallback, min, max) {
   const parsed = Number.parseFloat(raw);
@@ -78,26 +149,14 @@ function buildBackgroundCss() {
   const image = dim > 0
     ? `linear-gradient(rgba(0,0,0,${alpha(dim)}),rgba(0,0,0,${alpha(dim)})),url("${background.url}")`
     : `url("${background.url}")`;
-  const lightLayers = [
-    `--dsw-alias-bg-layer-1:rgba(255,255,255,${alpha(base)}) !important`,
-    `--dsw-alias-bg-layer-2:rgba(255,255,255,${alpha(Math.min(1, base + 0.08))}) !important`,
-    `--dsw-alias-bg-layer-3:rgba(255,255,255,${alpha(Math.min(1, base + 0.16))}) !important`,
-    `--dsw-alias-bg-mask-1:rgba(15,18,25,${alpha(Math.min(1, 0.28 + dim))}) !important`,
-  ].join(";");
-  const darkLayers = [
-    `--dsw-alias-bg-layer-1:rgba(28,28,30,${alpha(base)}) !important`,
-    `--dsw-alias-bg-layer-2:rgba(38,38,41,${alpha(Math.min(1, base + 0.08))}) !important`,
-    `--dsw-alias-bg-layer-3:rgba(48,48,52,${alpha(Math.min(1, base + 0.16))}) !important`,
-    `--dsw-alias-bg-mask-1:rgba(0,0,0,${alpha(Math.min(1, 0.4 + dim))}) !important`,
-  ].join(";");
+  const subtle = Math.min(1, base + 0.2);
   const blurRule = blur > 0
     ? `main,aside,section,nav{backdrop-filter:blur(${blur}px) !important;-webkit-backdrop-filter:blur(${blur}px) !important;}`
     : "";
   const css = [
     `html,body{background-image:${image} !important;background-size:${cssUrl(BACKGROUND_SIZE)} !important;background-position:${cssUrl(BACKGROUND_POSITION)} !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}`,
-    `body{background-color:transparent !important;}`,
-    `:root,html,body{--dsw-alias-bg-base:transparent !important;${lightLayers}}`,
-    `body[data-ds-dark-theme]{${darkLayers}}`,
+    `html,body{background-color:transparent !important;}`,
+    buildTokenCss(base, subtle),
     blurRule,
   ].join("");
   return `<style id="dsh-background">${css}</style>`;
