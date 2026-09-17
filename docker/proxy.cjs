@@ -328,7 +328,9 @@ function renderAppearanceCss(cfg) {
     // markdown block, not a child. Styling only the markdown block left all
     // of them flush at the column edge while the composer text sits at an
     // inset. Inset the shared row container so ALL rows line up together.
-    `[class~="_4SmsrG_flowItem"]{padding-left:14px !important;padding-right:14px !important;}`,
+    // 用子串而非精确 hash：CSS Module 的 hash 每次上游构建都会变
+    // （实测 _4SmsrG_ -> _8M2seq_），写死 hash 会让整条规则静默失效。
+    `[class*="_flowItem"]{padding-left:14px !important;padding-right:14px !important;}`,
     // Conversation / answer blocks: card-like, rounded, using the same surface
     // token as the rest of the workspace. The negative margin cancels the row
     // inset above so the card still spans the full column width (== the
@@ -346,13 +348,57 @@ function renderAppearanceCss(cfg) {
     // the 14px-inset line. Pull the composer input in by the same 14px so its
     // text keeps sharing one vertical line with the answer-card text.
     `[class*="_input"]{margin-left:14px !important;margin-right:14px !important;}`,
-    // Message column container ("直角背景"): round its corners and lock its
-    // width to the visible composer card so the two panels always share the
-    // exact same width, regardless of viewport or upstream CSS variable changes.
-    // --dsh-composer-card-max-width = PbIGXq_card.max-width (712px constant).
-    // Using the same variable means we can never accidentally widen the top
-    // panel past the bottom workspace, and vice-versa.
-    `[class~="_4SmsrG_column"]{border-radius:22px !important;width:var(--dsh-composer-card-max-width,712px) !important;max-width:var(--dsh-composer-card-max-width,712px) !important;}`,
+    // Message column container ("直角背景") — 在会话视图里负责把上下两栏拉到
+    // 同一宽度。子串匹配涵盖 ui-chat 的多种 css-module 命名（含 _column /
+    // Column / 主消息列）。桌面端由上游 flex/grid 决定实际宽度，移动端 @
+    // media 段会兜底改成 100%。
+    `[class*="_column"],[class*="Column"]{border-radius:22px !important;max-width:var(--dsh-composer-card-max-width,712px) !important;}`,
+    // ---- 移动端布局修复（max-width:640px）----
+    //
+    // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css + vendor.css 映射在原生命名）：
+    //   1) AppFrame 用 grid-template-columns 280px minmax(0,1fr) 0px 由 JS 写
+    //      到内联 style；viewport<400px 时中心列被压到 ~110px，几乎不可用。
+    //   2) 整张 AppFrame.module.css 里 0 条基于宽度的 @media，只有 3 条全是
+    //      prefers-reduced-motion。响应式完全靠 JS，但 JS 的"narrow" 判定
+    //      只在 SIDEBAR_AUTO_COLLAPSE=1024 时自动收缩侧栏，并未阻止用户在
+    //      手机上点开导致中心列崩溃。
+    //   3) centerCol / rightbarCol 都是 position:static 的 grid item，
+    //      sidebarCol / overlayLayer / handle 是 position:absolute 不占轨；
+    //      自动分配默认会把 centerCol 放到 track 1、rightbarCol 放到
+    //      track 2，因此把 grid 改成 "1fr | 0" 后必须显式 grid-column 钉死，
+    //      否则 rightbarCol 会被推到主轨把整张图盖住。
+    //
+    // 选择 .bR7R9W_*（ui-layout/AppFrame 当前 hash）作为首选，外加 [class$="_xxx"]
+    // 后缀兜底：上游下次重新打包把 bR7R9W 换成别的 hash 时，只要末尾仍是
+    // _frame / _sidebarCol / _centerCol / _rightbarCol / _handle 就仍然命中。
+    `@media (max-width:640px){`,
+    // 三列 → 单列，centerCol 显式钉到主轨。
+    `.bR7R9W_frame,[class$="_frame"]{grid-template-columns:minmax(0,1fr) 0px !important;}`,
+    `.bR7R9W_centerCol,[class$="_centerCol"]{grid-column:1 !important;}`,
+    `.bR7R9W_rightbarCol,[class$="_rightbarCol"]{grid-column:2 !important;}`,
+    // 侧栏改 overlay：脱离 grid，覆盖在中心列上方。
+    `.bR7R9W_sidebarCol,[class$="_sidebarCol"]{position:absolute !important;left:0 !important;top:0 !important;bottom:0 !important;width:min(86vw,320px) !important;z-index:50 !important;transform:translateX(-100%);transition:transform .22s ease !important;box-shadow:4px 0 24px rgba(0,0,0,.35) !important;}`,
+    // 展开 → 滑入；折叠 → 缩成 56px rail（不要 translateX 把内容推出屏幕）。
+    `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;}`,
+    `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
+    // 拖拽把在手机上没意义
+    `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
+    // 任何仍然被写死成 712px 的面板，在窄屏改成跟随视口。
+    `[class*="_column"],[class*="Column"],[class*="_card"],[class*="composer"],[class*="Composer"]{max-width:100% !important;width:auto !important;}`,
+    // 长内容（代码块 / 表格 / 长单词）不允许把页面顶宽。
+    `pre,code,table,[class*="markdown"],[class*="Markdown"]{max-width:100% !important;overflow-x:auto !important;}`,
+    `img,svg,video{max-width:100% !important;height:auto !important;}`,
+    // 行内左右内边距在窄屏收窄，避免和上面的 _bubble/_input 叠加后
+    // 把可用宽度挤到只剩一半。
+    `[class*="_flowItem"]{padding-left:10px !important;padding-right:10px !important;}`,
+    `[class*="_bubble"],[class*="_input"]{padding-left:12px !important;padding-right:12px !important;}`,
+    // 触控目标最小 44px（iOS HIG），只提升不改变视觉盒子。
+    // 刻意不含 a / input：正文里的超链接和表单控件基数太大，一把梭会把
+    // 行高和工具栏撑爆（a 里既有导航项也有 markdown 正文里的行内链接）。
+    `button,[role="button"]{min-height:44px !important;min-width:44px !important;}`,
+    // 输入框在移动端至少要 16px，否则 iOS Safari 聚焦时会自动放大整页。
+    `textarea,input,select{font-size:16px !important;}`,
+    `}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
   // hand-written tweaks keep winning over the panel.
