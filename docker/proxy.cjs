@@ -303,6 +303,23 @@ function appearanceFromQuery(params) {
 //
 // 这样「开关背景」只会切换背景图与表面透明度，布局像素级不变。
 const LAYOUT_FIX_CSS = [
+  // ---- 面板圆角背景（2026-09-18 恢复，沿用之前的圆角设计）----
+  //
+  // 之前的两处圆角：
+  //   1. 顶面板（消息列容器 _column）：22px。上游 column 自带 layer-1
+  //      背景色但 border-radius:0，看着就是一块「直角背景」，加 22px
+  //      后成为一张卡片。
+  //   2. markdown 回答卡：16px + layer-1 背景色，让 AI 回复像圆角卡片。
+  //
+  // border-radius 是**纯视觉裁剪**，不改变布局盒模型尺寸（width / height /
+  // position 都不受影响），所以放在布局层全局生效是安全的：开关背景都
+  // 保持一致的圆角外观，不会出现「只有开背景才有圆角」的割裂。
+  //
+  // 刻意**不恢复**之前配套的 padding:20px / margin:-14px /
+  // max-width:712px —— 那些是用户评价「治标不治本」的 PC 端对齐补丁，
+  // 已永久删除。这里只恢复圆角与卡片背景本身。
+  `[class*="_column"],[class*="Column"]{border-radius:22px !important;}`,
+  `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;}`,
   // ---- 移动端布局修复（max-width:640px）----
   //
   // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css +
