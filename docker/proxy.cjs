@@ -444,9 +444,17 @@ function renderAppearanceCss(cfg) {
     // 空状态 composer 卡片（PbIGXq_root/hero/...）默认 align-items:center +
     // flex-grow:0，width 被锁成 ~168px，输入框只剩 136px，无法输入。
     // 强制 root 横向伸展 + card flex-grow:1，让输入框占满 composer 区域。
-    `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;}`,
-    `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;}`,
+    // 重要：box-sizing:border-box — 上游是 content-box，width:100% 加 32px 左右
+    // padding 会撑出 viewport（320px 视口下实测 PbIGXq_root 撑到 342px）。
+    `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;box-sizing:border-box !important;max-width:100% !important;}`,
+    `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;box-sizing:border-box !important;}`,
     `[class*="PbIGXq_input"]{width:100% !important;min-height:44px !important;}`,
+    // centerCol 也加保险：避免任何子元素的 padding/box-sizing 撑爆。
+    `[class$="_centerCol"]{min-width:0 !important;box-sizing:border-box !important;max-width:100% !important;}`,
+    // body/html 横向裁剪 — 兜底：上游有 cmqW6G_panel 等 visibility:hidden
+    // 但 transform:translateX(320px) 推到屏外的元素，会让 body scrollWidth
+    // 翻倍（实测 320 视口下 scrollW=640）。overflow-x:hidden 把它们裁掉。
+    `html,body{overflow-x:hidden !important;}`,
     `}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
