@@ -1,26 +1,41 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <Container version="2">
   <Name>DeepSeek-Harness</Name>
   <Repository>ghcr.io/deltrivx/deepseek-harness:latest</Repository>
   <Registry>https://github.com/deltrivx/deepseek-harness/pkgs/container/deepseek-harness</Registry>
-  <Network>bridge</Network>
-  <MyIP/>
+  <Network>host</Network>
+  <MyIP />
+  <MyMAC />
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/deltrivx/deepseek-harness/issues</Support>
   <Project>https://github.com/deltrivx/deepseek-harness</Project>
-  <Overview>DeepSeek Harness (DSH) Docker 增强版 - 开箱即用的智能体运行时，支持局域网与 NAS 访问</Overview>
-  <Category>Productivity: Tools: Utilities:</Category>
+  <ReadMe />
+  <Overview>DeepSeek Harness (DSH) — 智能体运行时 WebUI。使用 host 网络，直接在宿主机 3080 端口提供服务（容器内 DSH_PORT=3018 由代理转发到 3080）。</Overview>
+  <Category>Productivity:Tools:Utilities:</Category>
   <WebUI>http://[IP]:[PORT:3080]/</WebUI>
+  <TemplateURL />
   <Icon>https://raw.githubusercontent.com/deltrivx/deepseek-harness/main/assets/icon.png</Icon>
-  <ExtraParams>--restart unless-stopped</ExtraParams>
-  <Config Name="WebUI 端口" Target="3080" Default="3080" Mode="tcp" Description="Web 访问端口" Type="Port" Display="always" Required="true" Mask="false">3080</Config>
-  <Config Name="配置目录" Target="/root/.dsh" Default="/mnt/user/appdata/deepseek-harness/data" Mode="rw" Description="DSH 核心持久化目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/data</Config>
-  <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
-  <Config Name="时区" Target="TZ" Default="Asia/Shanghai" Mode="env" Description="容器时区" Type="Variable" Display="always" Required="false" Mask="false">Asia/Shanghai</Config>
-  <Config Name="DSH 内部端口" Target="DSH_PORT" Default="3018" Mode="env" Description="DSH 核心实际监听端口" Type="Variable" Display="advanced" Required="false" Mask="false">3018</Config>
-  <Config Name="背景图路径" Target="DSH_BACKGROUND_FILE" Default="/root/.dsh/background.jpg" Mode="env" Description="WebUI 背景图，放在配置目录内；留空或文件不存在则不启用背景" Type="Variable" Display="advanced" Required="false" Mask="false">/root/.dsh/background.jpg</Config>
-  <Config Name="背景图填充" Target="DSH_BACKGROUND_SIZE" Default="cover" Mode="env" Description="背景填充方式：cover 铺满、contain 完整显示、auto 原始尺寸" Type="Variable" Display="advanced" Required="false" Mask="false">cover</Config>
-  <Config Name="背景面板不透明度" Target="DSH_BACKGROUND_LAYER_ALPHA" Default="0.72" Mode="env" Description="面板不透明度 0-1，越小背景越明显，越大文字越清晰" Type="Variable" Display="advanced" Required="false" Mask="false">0.72</Config>
-  <Config Name="背景图地址" Target="DSH_BACKGROUND_URL" Default="" Mode="env" Description="可选，外部图片 URL，填写后优先于本地背景图文件" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <ExtraParams>--restart=unless-stopped --log-opt max-size=50m --log-opt max-file=1</ExtraParams>
+  <PostArgs />
+  <CPUset />
+  <DateInstalled>1789610895</DateInstalled>
+  <DonateText />
+  <DonateLink />
+  <Requires />
+  <Config Name="WebUI 端口" Target="TCP_PORT_3080" Default="3080" Mode="" Description="host 网络下 Unraid 面板据此识别 Web UI 端口，必须与实际访问端口一致。" Type="Variable" Display="always" Required="true" Mask="false">3080</Config>
+  <Config Name="对外服务端口" Target="PORT" Default="3080" Mode="" Description="容器内 HTTP 服务监听端口（host 网络下即宿主机端口）。" Type="Variable" Display="always" Required="true" Mask="false">3080</Config>
+  <Config Name="DSH 内部端口" Target="DSH_PORT" Default="3018" Mode="" Description="DSH 核心实际监听端口，由容器内代理转发到对外服务端口，一般不用改。" Type="Variable" Display="advanced-hide" Required="false" Mask="false">3018</Config>
+  <Config Name="DSH 主目录" Target="DSH_HOME" Default="/root/.dsh" Mode="" Description="DSH 配置与持久化根目录，需与下方「配置目录」的容器路径一致。" Type="Variable" Display="advanced-hide" Required="false" Mask="false">/root/.dsh</Config>
+  <Config Name="Node 运行环境" Target="NODE_ENV" Default="production" Mode="" Description="固定为 production。" Type="Variable" Display="advanced-hide" Required="false" Mask="false">production</Config>
+  <Config Name="配置目录" Target="/root/.dsh" Default="/mnt/user/appdata/deepseek-harness/data" Mode="rw" Description="DSH 核心持久化目录：settings.yaml、appearance.json、background 等。" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/data</Config>
+  <Config Name="工作区目录" Target="/workspace" Default="/mnt/user/appdata/deepseek-harness/workspace" Mode="rw" Description="代码与文件工作区。" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/deepseek-harness/workspace</Config>
+  <Config Name="背景图路径" Target="DSH_BACKGROUND_FILE" Default="/root/.dsh/background.jpg" Mode="" Description="WebUI 背景图，须放在配置目录内；留空则使用默认路径 /root/.dsh/background.jpg，文件不存在时不启用背景。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="背景图地址" Target="DSH_BACKGROUND_URL" Default="" Mode="" Description="可选，外部图片 URL；填写后优先于本地背景图文件。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="背景填充方式" Target="DSH_BACKGROUND_SIZE" Default="cover" Mode="" Description="cover 铺满 / contain 完整显示 / auto 原始尺寸。留空等同 cover。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="背景对齐位置" Target="DSH_BACKGROUND_POSITION" Default="center" Mode="" Description="同 CSS background-position。留空等同 center。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="面板不透明度" Target="DSH_BACKGROUND_LAYER_ALPHA" Default="0.72" Mode="" Description="0-1，越小背景越明显、越大文字越清晰。留空使用内置默认值。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="背景压暗" Target="DSH_BACKGROUND_DIM" Default="0" Mode="" Description="0-0.9，压暗背景提升文字可读性，0 为关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="面板毛玻璃" Target="DSH_BACKGROUND_BLUR" Default="0" Mode="" Description="毛玻璃像素值，0 为关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="背景开关" Target="DSH_BACKGROUND_ENABLED" Default="auto" Mode="" Description="auto 自动（有图则启用）/ true 强制开启 / false 强制关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
 </Container>
