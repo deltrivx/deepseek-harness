@@ -286,15 +286,134 @@ function appearanceFromQuery(params) {
   return sanitizeAppearance({ ...loadAppearance(), ...patch });
 }
 
+// ---------------------------------------------------------------------------
+// 两层分离（2026-09-18 重构）
+//
+// 之前所有布局补丁都写在 renderAppearanceCss() 里，而它在 enabled=false 时
+// 直接 return "" —— 于是「关背景 = 零补丁（原始布局）」「开背景 = 全部补丁
+// 一次性生效」。用户看到的现象就是：不开背景一切正常，一开背景布局全乱。
+//
+// 现在严格分层：
+//   LAYOUT_FIX_CSS        布局层，永远注入，不受背景开关影响。只做移动端
+//                         适配所必需的几何与不透明度，桌面端一律不碰。
+//   renderAppearanceCss() 背景层，仅当 enabled 且有背景图时才产出内容。
+//                         只改颜色 / 背景图 / 模糊，**绝不改任何几何属性**
+//                         （padding / margin / width / max-width / flex /
+//                         grid / position 一律禁止出现在这里）。
+//
+// 这样「开关背景」只会切换背景图与表面透明度，布局像素级不变。
+const LAYOUT_FIX_CSS = [
+  // ---- 移动端布局修复（max-width:640px）----
+  //
+  // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css +
+  // vendor.css 映射在原生命名）：
+  //   1) AppFrame 用 grid-template-columns 280px minmax(0,1fr) 0px 由 JS 写
+  //      到内联 style；viewport<400px 时中心列被压到 ~110px，几乎不可用。
+  //   2) 整张 AppFrame.module.css 里 0 条基于宽度的 @media，只有 3 条全是
+  //      prefers-reduced-motion。响应式完全靠 JS，但 JS 的 "narrow" 判定
+  //      只在 SIDEBAR_AUTO_COLLAPSE=1024 时自动收缩侧栏，并未阻止用户在
+  //      手机上点开导致中心列崩溃。
+  //   3) centerCol / rightbarCol 都是 position:static 的 grid item，
+  //      sidebarCol / overlayLayer / handle 是 position:absolute 不占轨；
+  //      自动分配默认会把 centerCol 放到 track 1、rightbarCol 放到
+  //      track 2，因此把 grid 改成 "1fr | 0" 后必须显式 grid-column 钉死，
+  //      否则 rightbarCol 会被推到主轨把整张图盖住。
+  //
+  // 选择 .bR7R9W_*（ui-layout/AppFrame 当前 hash）作为首选，外加
+  // [class$="_xxx"] 后缀兜底：上游下次重新打包把 bR7R9W 换成别的 hash 时，
+  // 只要末尾仍是 _frame / _sidebarCol / _centerCol / _rightbarCol / _handle
+  // 就仍然命中。
+  `@media (max-width:640px){`,
+  // 三列 → 单列，centerCol 显式钉到主轨。
+  `.bR7R9W_frame,[class$="_frame"]{grid-template-columns:minmax(0,1fr) 0px !important;}`,
+  `.bR7R9W_centerCol,[class$="_centerCol"]{grid-column:1 !important;}`,
+  `.bR7R9W_rightbarCol,[class$="_rightbarCol"]{grid-column:2 !important;}`,
+  // 侧栏改 overlay：脱离 grid，覆盖在中心列上方。
+  `.bR7R9W_sidebarCol,[class$="_sidebarCol"]{position:absolute !important;left:0 !important;top:0 !important;bottom:0 !important;width:min(86vw,320px) !important;z-index:50 !important;transform:translateX(-100%);transition:transform .22s ease !important;box-shadow:4px 0 24px rgba(0,0,0,.35) !important;}`,
+  // 展开 → 滑入；折叠 → 缩成 56px rail（不要 translateX 把内容推出屏幕）。
+  `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;}`,
+  `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
+  // 拖拽把在手机上没意义
+  `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
+  // overlayLayer 是 sidebar overlay 的点击关闭层 — 桌面不显示，移动端
+  // 展开 sidebar 时需要变成半透明黑色 backdrop，点击关闭侧栏。
+  `[class$="_overlayLayer"]{display:none !important;}`,
+  `.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_overlayLayer"],.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_overlayLayer{display:block !important;background-color:rgba(0,0,0,.5) !important;z-index:49 !important;}`,
+  // 任何仍然被写死成 712px 的面板，在窄屏改成跟随视口。
+  `[class*="_column"],[class*="Column"],[class*="_card"],[class*="composer"],[class*="Composer"]{max-width:100% !important;width:auto !important;}`,
+  // 长内容（代码块 / 表格 / 长单词）不允许把页面顶宽。
+  `pre,code,table,[class*="markdown"],[class*="Markdown"]{max-width:100% !important;overflow-x:auto !important;}`,
+  `img,svg,video{max-width:100% !important;height:auto !important;}`,
+  // 触控目标最小 44px（iOS HIG），只提升不改变视觉盒子。
+  // 刻意不含 a / input：正文里的超链接和表单控件基数太大，一把梭会把
+  // 行高和工具栏撑爆（a 里既有导航项也有 markdown 正文里的行内链接）。
+  `button,[role="button"]{min-height:44px !important;min-width:44px !important;}`,
+  // 输入框在移动端至少要 16px，否则 iOS Safari 聚焦时会自动放大整页。
+  `textarea,input,select{font-size:16px !important;}`,
+  // ---- 设置面板移动端重排（实测 iPhone 16 Pro 402 视口）----
+  // 设置面板（BCrMEa_panel）默认是 nav 188px + content 132px 双列布局，
+  // 移动端视口只有 320px 时 content 被自身 padding 进一步压成 84px，每行
+  // rowText 48px + control 68px 直接溢出，标题/描述文字一字符一字符竖排。
+  // 改成：panel 占满视口 + 纵向布局；nav 横向滚动条；content 占满；行内
+  // rowText / control 上下堆叠。
+  // 同样用 .BCrMEa_* + [class*="settingsPanel"] 双选择器。
+  // z-index 要高于侧栏 overlay（z-index=50），否则侧栏 logo / 工作区
+  // 文字会从面板下面透出来，看起来像没遮挡。
+  // 注意：这里不能用 var(--dsw-alias-bg-layer-1, ...) — 该变量在深色
+  // 主题里实际是 32% 透明的 rgba，回退值永远不会生效，面板会半透。
+  // 改为硬编码的不透明背景色：深色 #14141a / 浅色 #ffffff。
+  `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;z-index:60 !important;background:#14141a !important;background-color:#14141a !important;}`,
+  `body[data-ds-light-theme] .BCrMEa_panel,body[data-ds-light-theme] [class*="settingsPanel"]{background:#ffffff !important;background-color:#ffffff !important;}`,
+  `.BCrMEa_overlay,[class$="_overlay"]{z-index:60 !important;background:rgba(0,0,0,.5) !important;}`,
+  `.BCrMEa_nav,[class$="_nav"]:not([role=navigation]){width:100% !important;height:auto !important;max-height:56px !important;flex:0 0 auto !important;flex-direction:row !important;overflow-x:auto !important;overflow-y:hidden !important;padding:8px 12px !important;border-bottom:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;}`,
+  `.BCrMEa_navTitle{display:none !important;}`,
+  `.BCrMEa_navList{flex-direction:row !important;flex-wrap:nowrap !important;gap:8px !important;height:40px !important;align-items:center !important;}`,
+  `.BCrMEa_navCell{flex-shrink:0 !important;width:auto !important;height:32px !important;padding:0 12px !important;}`,
+  `.BCrMEa_content{width:100% !important;flex:1 1 auto !important;min-height:0 !important;padding:12px !important;}`,
+  `[class*="_row"]:not([class*="cubeRow"]):not([class*="navList"]):not([class*="arrowRow"]){flex-direction:column !important;align-items:stretch !important;gap:8px !important;padding:12px 0 !important;}`,
+  `[class*="_rowText"]{width:100% !important;}`,
+  `[class*="_title"],[class*="_desc"]{width:100% !important;max-width:100% !important;}`,
+  // 主题色块（外观 → 浅色/深色/跟随系统）：三个并排均分。
+  `[class$="_cubeRow"]{flex-direction:row !important;flex-wrap:nowrap !important;gap:12px !important;height:auto !important;justify-content:space-between !important;padding:8px 0 !important;}`,
+  `[class$="_themeCube"]{flex:1 1 0 !important;min-width:0 !important;max-width:88px !important;height:88px !important;}`,
+  // 通用弹层（工作区选择器、确认弹窗等）：_dialog_* 默认是 14% 透明，
+  // 透出背景里的选择器图标 / 空状态文字。直接覆盖为不透明深色；
+  // 浅色主题同样翻成白色。同时加阴影 + 提 z-index 让 dialog 浮在
+  // backdrop 之上更有层次。
+  `[class*="_dialog"]{background-color:#14141a !important;background:#14141a !important;border-radius:12px !important;box-shadow:0 16px 48px rgba(0,0,0,.5) !important;z-index:1100 !important;}`,
+  `body[data-ds-light-theme] [class*="_dialog"]{background-color:#ffffff !important;background:#ffffff !important;}`,
+  // 弹层根（_root_*）固定铺满屏幕，给一个深色 backdrop 让弹层与背景
+  // 拉开层次（DSH body 本身就是深色，0.5 黑叠在深色上看不出，必须更深）。
+  `[class*="_root_"]:has([class*="_dialog"]){background-color:rgba(0,0,0,.72) !important;}`,
+  // 选择器下拉（_list_* scrollable portal）：32% 透明同样修成不透明。
+  `[class*="_list_"][class*="portal"]{background-color:#14141a !important;background:#14141a !important;border:1px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;border-radius:10px !important;max-width:calc(100vw - 24px) !important;}`,
+  `body[data-ds-light-theme] [class*="_list_"][class*="portal"]{background-color:#ffffff !important;background:#ffffff !important;}`,
+  // 空状态 composer 卡片（PbIGXq_root/hero/...）默认 align-items:center +
+  // flex-grow:0，width 被锁成 ~168px，输入框只剩 136px，无法输入。
+  // 强制 root 横向伸展 + card flex-grow:1，让输入框占满 composer 区域。
+  // 重要：box-sizing:border-box — 上游是 content-box，width:100% 加 32px 左右
+  // padding 会撑出 viewport（320px 视口下实测 PbIGXq_root 撑到 342px）。
+  `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;box-sizing:border-box !important;max-width:100% !important;}`,
+  `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;box-sizing:border-box !important;}`,
+  `[class*="PbIGXq_input"]{width:100% !important;min-height:44px !important;}`,
+  // centerCol 也加保险：避免任何子元素的 padding/box-sizing 撑爆。
+  `[class$="_centerCol"]{min-width:0 !important;box-sizing:border-box !important;max-width:100% !important;}`,
+  // body/html 横向裁剪 — 兜底：上游有 cmqW6G_panel 等 visibility:hidden
+  // 但 transform:translateX(320px) 推到屏外的元素，会让 body scrollWidth
+  // 翻倍（实测 320 视口下 scrollW=640）。overflow-x:hidden 把它们裁掉。
+  `html,body{overflow-x:hidden !important;}`,
+  `}`,
+].join("");
+
 function renderAppearanceCss(cfg) {
   // An explicitly configured file still fully replaces the stylesheet.
   const explicit = (process.env.DSH_BACKGROUND_CSS || "").trim();
-  if (explicit) return readCssFile(explicit);
+  if (explicit) return LAYOUT_FIX_CSS + readCssFile(explicit);
 
   const base = sanitizeAppearance(cfg);
-  if (!base.enabled) return "";
+  if (!base.enabled) return LAYOUT_FIX_CSS;
   const background = resolveBackground();
-  if (!background) return "";
+  if (!background) return LAYOUT_FIX_CSS;
 
   const image = base.dim > 0
     ? `linear-gradient(rgba(0,0,0,${alpha(base.dim)}),rgba(0,0,0,${alpha(base.dim)})),url("${background.url}")`
@@ -318,148 +437,10 @@ function renderAppearanceCss(cfg) {
     `textarea,input,select{background-color:rgba(255,255,255,${alpha(base.inputAlpha)}) !important;${inputBlur}color:#1f2328 !important;}`,
     `body[data-ds-dark-theme] main{background-color:rgba(28,28,30,${alpha(Math.min(1, base.panelAlpha * 1.3))}) !important;}`,
     `body[data-ds-dark-theme] textarea,body[data-ds-dark-theme] input,body[data-ds-dark-theme] select{background-color:rgba(28,28,30,${alpha(Math.min(1, base.inputAlpha * 1.4))}) !important;color:#e6e6e6 !important;}`,
-    // Conversation / answer blocks: card-like, inset from both sides, rounded,
-    // using the same surface token as the rest of the workspace.
-    // "_markdown_1wejo_*" is the file-type icon for .md files (it sits next to
-    // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
-    // must be excluded or every .md file chip would get a card around it.
-    // Every row inside the message column (user turns, "已思考", "思考",
-    // "读取 …" tool calls, usage footer, error rows…) is a *sibling* of the
-    // markdown block, not a child. Styling only the markdown block left all
-    // of them flush at the column edge while the composer text sits at an
-    // inset. Inset the shared row container so ALL rows line up together.
-    // 用子串而非精确 hash：CSS Module 的 hash 每次上游构建都会变
-    // （实测 _4SmsrG_ -> _8M2seq_），写死 hash 会让整条规则静默失效。
-    `[class*="_flowItem"]{padding-left:14px !important;padding-right:14px !important;}`,
-    // Conversation / answer blocks: card-like, rounded, using the same surface
-    // token as the rest of the workspace. The negative margin cancels the row
-    // inset above so the card still spans the full column width (== the
-    // composer card) while its own text lands on that same shared line.
-    // "_markdown_1wejo_*" is the .md file-type icon (it sits next to
-    // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
-    // must be excluded or every .md file chip would get a card around it.
-    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:0 !important;margin-right:0 !important;padding:10px 20px !important;}`,
-    // Inner text boxes: give the user bubble and the composer input the same
-    // 20px side inset as the answer card, so no text sits flush against its
-    // own box edge, and all three still start on one shared vertical line.
-    // The composer input ships padL=14 / padR=8 (asymmetric) — hence the fix.
-    `[class*="_bubble"],[class*="_input"]{padding-left:20px !important;padding-right:20px !important;}`,
-    // The answer card no longer uses a negative margin, so its box now sits at
-    // the 14px-inset line. Pull the composer input in by the same 14px so its
-    // text keeps sharing one vertical line with the answer-card text.
-    `[class*="_input"]{margin-left:14px !important;margin-right:14px !important;}`,
-    // Message column container ("直角背景") — 在会话视图里负责把上下两栏拉到
-    // 同一宽度。子串匹配涵盖 ui-chat 的多种 css-module 命名（含 _column /
-    // Column / 主消息列）。桌面端由上游 flex/grid 决定实际宽度，移动端 @
-    // media 段会兜底改成 100%。
-    `[class*="_column"],[class*="Column"]{border-radius:22px !important;max-width:var(--dsh-composer-card-max-width,712px) !important;}`,
-    // ---- 移动端布局修复（max-width:640px）----
-    //
-    // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css + vendor.css 映射在原生命名）：
-    //   1) AppFrame 用 grid-template-columns 280px minmax(0,1fr) 0px 由 JS 写
-    //      到内联 style；viewport<400px 时中心列被压到 ~110px，几乎不可用。
-    //   2) 整张 AppFrame.module.css 里 0 条基于宽度的 @media，只有 3 条全是
-    //      prefers-reduced-motion。响应式完全靠 JS，但 JS 的"narrow" 判定
-    //      只在 SIDEBAR_AUTO_COLLAPSE=1024 时自动收缩侧栏，并未阻止用户在
-    //      手机上点开导致中心列崩溃。
-    //   3) centerCol / rightbarCol 都是 position:static 的 grid item，
-    //      sidebarCol / overlayLayer / handle 是 position:absolute 不占轨；
-    //      自动分配默认会把 centerCol 放到 track 1、rightbarCol 放到
-    //      track 2，因此把 grid 改成 "1fr | 0" 后必须显式 grid-column 钉死，
-    //      否则 rightbarCol 会被推到主轨把整张图盖住。
-    //
-    // 选择 .bR7R9W_*（ui-layout/AppFrame 当前 hash）作为首选，外加 [class$="_xxx"]
-    // 后缀兜底：上游下次重新打包把 bR7R9W 换成别的 hash 时，只要末尾仍是
-    // _frame / _sidebarCol / _centerCol / _rightbarCol / _handle 就仍然命中。
-    `@media (max-width:640px){`,
-    // 三列 → 单列，centerCol 显式钉到主轨。
-    `.bR7R9W_frame,[class$="_frame"]{grid-template-columns:minmax(0,1fr) 0px !important;}`,
-    `.bR7R9W_centerCol,[class$="_centerCol"]{grid-column:1 !important;}`,
-    `.bR7R9W_rightbarCol,[class$="_rightbarCol"]{grid-column:2 !important;}`,
-    // 侧栏改 overlay：脱离 grid，覆盖在中心列上方。
-    `.bR7R9W_sidebarCol,[class$="_sidebarCol"]{position:absolute !important;left:0 !important;top:0 !important;bottom:0 !important;width:min(86vw,320px) !important;z-index:50 !important;transform:translateX(-100%);transition:transform .22s ease !important;box-shadow:4px 0 24px rgba(0,0,0,.35) !important;}`,
-    // 展开 → 滑入；折叠 → 缩成 56px rail（不要 translateX 把内容推出屏幕）。
-    `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;}`,
-    `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
-    // 拖拽把在手机上没意义
-    `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
-    // overlayLayer 是 sidebar overlay 的点击关闭层 — 桌面不显示，移动端
-    // 展开 sidebar 时需要变成半透明黑色 backdrop，点击关闭侧栏。
-    `[class$="_overlayLayer"]{display:none !important;}`,
-    `.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_overlayLayer"],.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_overlayLayer{display:block !important;background-color:rgba(0,0,0,.5) !important;z-index:49 !important;}`,
-    // 任何仍然被写死成 712px 的面板，在窄屏改成跟随视口。
-    `[class*="_column"],[class*="Column"],[class*="_card"],[class*="composer"],[class*="Composer"]{max-width:100% !important;width:auto !important;}`,
-    // 长内容（代码块 / 表格 / 长单词）不允许把页面顶宽。
-    `pre,code,table,[class*="markdown"],[class*="Markdown"]{max-width:100% !important;overflow-x:auto !important;}`,
-    `img,svg,video{max-width:100% !important;height:auto !important;}`,
-    // 行内左右内边距在窄屏收窄，避免和上面的 _bubble/_input 叠加后
-    // 把可用宽度挤到只剩一半。
-    `[class*="_flowItem"]{padding-left:10px !important;padding-right:10px !important;}`,
-    `[class*="_bubble"],[class*="_input"]{padding-left:12px !important;padding-right:12px !important;}`,
-    // 触控目标最小 44px（iOS HIG），只提升不改变视觉盒子。
-    // 刻意不含 a / input：正文里的超链接和表单控件基数太大，一把梭会把
-    // 行高和工具栏撑爆（a 里既有导航项也有 markdown 正文里的行内链接）。
-    `button,[role="button"]{min-height:44px !important;min-width:44px !important;}`,
-    // 输入框在移动端至少要 16px，否则 iOS Safari 聚焦时会自动放大整页。
-    `textarea,input,select{font-size:16px !important;}`,
-    // ---- 设置面板移动端重排（实测 iPhone 16 Pro 402 视口）----
-    // 设置面板（BCrMEa_panel）默认是 nav 188px + content 132px 双列布局，
-    // 移动端视口只有 320px 时 content 被自身 padding 进一步压成 84px，每行
-    // rowText 48px + control 68px 直接溢出，标题/描述文字一字符一字符竖排。
-    // 改成：panel 占满视口 + 纵向布局；nav 横向滚动条；content 占满；行内
-    // rowText / control 上下堆叠。
-    // 同样用 .BCrMEa_* + [class*="settingsPanel"] 双选择器。
-    // z-index 要高于侧栏 overlay（z-index=50），否则侧栏 logo / 工作区
-    // 文字会从面板下面透出来，看起来像没遮挡。
-    // 注意：这里不能用 var(--dsw-alias-bg-layer-1, ...) — 该变量在深色
-    // 主题里实际是 32% 透明的 rgba，回退值永远不会生效，面板会半透。
-    // 改为硬编码的不透明背景色：深色 #14141a / 浅色 #ffffff，调用栈两层。
-    // 由于我们注入在 <head> 末尾 + !important，能压过组件 CSS 的同名背景。
-    `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;z-index:60 !important;background:#14141a !important;background-color:#14141a !important;}`,
-    `body[data-ds-light-theme] .BCrMEa_panel,body[data-ds-light-theme] [class*="settingsPanel"]{background:#ffffff !important;background-color:#ffffff !important;}`,
-    `.BCrMEa_overlay,[class$="_overlay"]{z-index:60 !important;background:rgba(0,0,0,.5) !important;}`,
-    `.BCrMEa_nav,[class$="_nav"]:not([role=navigation]){width:100% !important;height:auto !important;max-height:56px !important;flex:0 0 auto !important;flex-direction:row !important;overflow-x:auto !important;overflow-y:hidden !important;padding:8px 12px !important;border-bottom:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;}`,
-    `.BCrMEa_navTitle{display:none !important;}`,
-    `.BCrMEa_navList{flex-direction:row !important;flex-wrap:nowrap !important;gap:8px !important;height:40px !important;align-items:center !important;}`,
-    `.BCrMEa_navCell{flex-shrink:0 !important;width:auto !important;height:32px !important;padding:0 12px !important;}`,
-    `.BCrMEa_content{width:100% !important;flex:1 1 auto !important;min-height:0 !important;padding:12px !important;}`,
-    `[class*="_row"]:not([class*="cubeRow"]):not([class*="navList"]):not([class*="arrowRow"]){flex-direction:column !important;align-items:stretch !important;gap:8px !important;padding:12px 0 !important;}`,
-    `[class*="_rowText"]{width:100% !important;}`,
-    `[class*="_title"],[class*="_desc"]{width:100% !important;max-width:100% !important;}`,
-    // 主题色块（外观 → 浅色/深色/跟随系统）：三个并排均分。
-    `[class$="_cubeRow"]{flex-direction:row !important;flex-wrap:nowrap !important;gap:12px !important;height:auto !important;justify-content:space-between !important;padding:8px 0 !important;}`,
-    `[class$="_themeCube"]{flex:1 1 0 !important;min-width:0 !important;max-width:88px !important;height:88px !important;}`,
-    // 通用弹层（工作区选择器、确认弹窗等）：_dialog_* 默认是 14% 透明，
-    // 透出背景里的选择器图标 / 空状态文字。直接覆盖为不透明深色；
-    // 浅色主题同样翻成白色。同时加阴影 + 提 z-index 让 dialog 浮在
-    // backdrop 之上更有层次。
-    `[class*="_dialog"]{background-color:#14141a !important;background:#14141a !important;border-radius:12px !important;box-shadow:0 16px 48px rgba(0,0,0,.5) !important;z-index:1100 !important;}`,
-    `body[data-ds-light-theme] [class*="_dialog"]{background-color:#ffffff !important;background:#ffffff !important;}`,
-    // 弹层根（_root_*）固定铺满屏幕，给一个深色 backdrop 让弹层与背景
-    // 拉开层次（DSH body 本身就是深色，0.5 黑叠在深色上看不出，必须更深）。
-    `[class*="_root_"]:has([class*="_dialog"]){background-color:rgba(0,0,0,.72) !important;}`,
-    // 选择器下拉（_list_* scrollable portal）：32% 透明同样修成不透明。
-    `[class*="_list_"][class*="portal"]{background-color:#14141a !important;background:#14141a !important;border:1px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;border-radius:10px !important;max-width:calc(100vw - 24px) !important;}`,
-    `body[data-ds-light-theme] [class*="_list_"][class*="portal"]{background-color:#ffffff !important;background:#ffffff !important;}`,
-    // 空状态 composer 卡片（PbIGXq_root/hero/...）默认 align-items:center +
-    // flex-grow:0，width 被锁成 ~168px，输入框只剩 136px，无法输入。
-    // 强制 root 横向伸展 + card flex-grow:1，让输入框占满 composer 区域。
-    // 重要：box-sizing:border-box — 上游是 content-box，width:100% 加 32px 左右
-    // padding 会撑出 viewport（320px 视口下实测 PbIGXq_root 撑到 342px）。
-    `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;box-sizing:border-box !important;max-width:100% !important;}`,
-    `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;box-sizing:border-box !important;}`,
-    `[class*="PbIGXq_input"]{width:100% !important;min-height:44px !important;}`,
-    // centerCol 也加保险：避免任何子元素的 padding/box-sizing 撑爆。
-    `[class$="_centerCol"]{min-width:0 !important;box-sizing:border-box !important;max-width:100% !important;}`,
-    // body/html 横向裁剪 — 兜底：上游有 cmqW6G_panel 等 visibility:hidden
-    // 但 transform:translateX(320px) 推到屏外的元素，会让 body scrollWidth
-    // 翻倍（实测 320 视口下 scrollW=640）。overflow-x:hidden 把它们裁掉。
-    `html,body{overflow-x:hidden !important;}`,
-    `}`,
   ].join("");
-  // A background.css dropped next to the image is still appended last, so
-  // hand-written tweaks keep winning over the panel.
-  return rules + readCssFile(BACKGROUND_CSS_FILE);
+  // 布局层在前（几何基线），背景层居中（只上色），background.css 追加在最后
+  // —— 手写的覆盖依然是最终赢家。
+  return LAYOUT_FIX_CSS + rules + readCssFile(BACKGROUND_CSS_FILE);
 }
 
 function buildBackgroundCss() {
