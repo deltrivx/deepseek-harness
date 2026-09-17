@@ -398,6 +398,25 @@ function renderAppearanceCss(cfg) {
     `button,[role="button"]{min-height:44px !important;min-width:44px !important;}`,
     // 输入框在移动端至少要 16px，否则 iOS Safari 聚焦时会自动放大整页。
     `textarea,input,select{font-size:16px !important;}`,
+    // ---- 设置面板移动端重排（实测 iPhone 16 Pro 402 视口）----
+    // 设置面板（BCrMEa_panel）默认是 nav 188px + content 132px 双列布局，
+    // 移动端视口只有 320px 时 content 被自身 padding 进一步压成 84px，每行
+    // rowText 48px + control 68px 直接溢出，标题/描述文字一字符一字符竖排。
+    // 改成：panel 占满视口 + 纵向布局；nav 横向滚动条；content 占满；行内
+    // rowText / control 上下堆叠。
+    // 同样用 .BCrMEa_* + [class$="_xxx"] 双选择器。
+    `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;}`,
+    `.BCrMEa_nav,[class$="_nav"]:not([role=navigation]){width:100% !important;height:auto !important;max-height:56px !important;flex:0 0 auto !important;overflow-x:auto !important;overflow-y:hidden !important;padding:8px 12px !important;border-bottom:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;}`,
+    `.BCrMEa_navTitle{display:none !important;}`,
+    `.BCrMEa_navList{flex-direction:row !important;flex-wrap:nowrap !important;gap:8px !important;height:40px !important;align-items:center !important;}`,
+    `.BCrMEa_navCell{flex-shrink:0 !important;width:auto !important;height:32px !important;padding:0 12px !important;}`,
+    `.BCrMEa_content{width:100% !important;flex:1 1 auto !important;min-height:0 !important;padding:12px !important;}`,
+    `[class*="_row"]:not([class*="cubeRow"]):not([class*="navList"]):not([class*="arrowRow"]){flex-direction:column !important;align-items:stretch !important;gap:8px !important;padding:12px 0 !important;}`,
+    `[class*="_rowText"]{width:100% !important;}`,
+    `[class*="_title"],[class*="_desc"]{width:100% !important;max-width:100% !important;}`,
+    // 主题色块（外观 → 浅色/深色/跟随系统）：三个并排均分。
+    `[class$="_cubeRow"]{flex-direction:row !important;flex-wrap:nowrap !important;gap:12px !important;height:auto !important;justify-content:space-between !important;padding:8px 0 !important;}`,
+    `[class$="_themeCube"]{flex:1 1 0 !important;min-width:0 !important;max-width:88px !important;height:88px !important;}`,
     `}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
