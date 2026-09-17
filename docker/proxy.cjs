@@ -325,6 +325,30 @@ const LAYOUT_FIX_CSS = [
   // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
   // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
   `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
+  // ---- 顶面板 kBmzhq_header（会话头 + 标签栏）----
+  //
+  // 圆角面板背景：跟 markdown 同样的 layer-1 颜色 + 22px 圆角，与底部 composer
+  // 卡 (PbIGXq_card, w=774) 同宽居中。原本这条 header 默认全宽 (1160px) 撑满
+  // centerCol，背景也是透明的，看起来像一块扁平的横条；加 panel 后变成顶/底
+  // 两张同宽卡片的对称视觉。
+  //
+  // 用 width + margin 0 auto 收宽度是布局改动，但只影响这一条 header 本身
+  // （不挪走 grid track、不动 sidebarCol / centerCol 划分）；header 内的
+  // titleRow / tabs 都是 flex 自然收窄，外层 width 缩了它们也跟着居中显示。
+  // 不改 box-sizing —— header 默认已是 border-box（实测），加 padding 不会
+  // 撑爆外宽。
+  //
+  // 上游 titleCluster 默认 flex-basis:0% + flex-shrink:1，把外层 width 缩
+  // 到 774 后它会被 headerUtilities 挤到 width:0 → 标题完全消失。这里把
+  // 它的 flex 行为松开（flex-shrink:0 / flex-basis:auto），让标题按内容
+  // 自然占位，headerUtilities 仍可放右但溢出时也至少看得到标题。
+  `[class*="kBmzhq_header"]{background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:22px !important;padding:8px 16px !important;box-sizing:border-box !important;}`,
+  // 桌面端 header 收窄到 774px 与 composer 卡同宽居中。移动端不约束宽度，让它
+  // 自然撑满 centerCol（content-box 配合 padding 8px 16px 加上 centerCol 自身
+  // 的 width:100%，不会溢出）。
+  `@media (min-width:1024px){[class*="kBmzhq_header"]{width:774px !important;max-width:774px !important;margin:8px auto 0 !important;}}`,
+  `[class*="kBmzhq_header"] [class*="kBmzhq_titleCluster"]{flex-shrink:0 !important;flex-basis:auto !important;min-width:0 !important;}`,
+  `[class*="kBmzhq_header"] [class*="kBmzhq_tabs"]{padding-left:0 !important;}`,
   // ---- 移动端布局修复（max-width:640px）----
   //
   // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css +
@@ -483,7 +507,18 @@ function appearanceVersion() {
 }
 
 function handleBackgroundRoute(req, res) {
-  const pathname = String(req.url || "").split("?")[0];
+  // req.url can be either a relative path ("/__dsh-background?v=...")
+  // or an absolute URI ("http://host:port/__dsh-background?v=...") when the
+  // request arrives through an HTTP proxy (Chrome's CDP-issued fetch / image
+  // preload / css url() resolution). Strip both forms down to a clean pathname
+  // before matching, otherwise the handler silently misses and the request
+  // falls through to upstream DSH which 404s.
+  let pathname;
+  try {
+    pathname = new URL(req.url, "http://dsh.invalid").pathname;
+  } catch {
+    pathname = String(req.url || "").split("?")[0];
+  }
   if (pathname !== BACKGROUND_ROUTE) return false;
   try {
     const stat = fs.statSync(BACKGROUND_FILE);
@@ -664,7 +699,15 @@ function appearancePanelScript() {
 }
 
 async function handleAppearanceRoute(req, res) {
-  const [rawPath, search] = String(req.url || "").split("?");
+  // Same absolute-URI caveat as handleBackgroundRoute — see comment there.
+  let rawPath, search;
+  try {
+    const u = new URL(req.url, "http://dsh.invalid");
+    rawPath = u.pathname;
+    search = u.search.startsWith("?") ? u.search.slice(1) : "";
+  } catch {
+    [rawPath, search] = String(req.url || "").split("?");
+  }
   const pathname = rawPath || "";
   if (pathname === APPEARANCE_CSS_ROUTE) {
     if (req.method !== "GET" && req.method !== "HEAD") return false;
@@ -822,8 +865,12 @@ function sendConfigPage(req, res) {
 }
 
 async function handleConfigRoute(req, res) {
-  if (req.url === "/__dsh-config" && req.method === "GET") { sendConfigPage(req, res); return true; }
-  if (req.url === "/__dsh-config" && req.method === "POST") {
+  // See handleBackgroundRoute for why we can't trust raw req.url.
+  let pathname = req.url;
+  try { pathname = new URL(req.url, "http://dsh.invalid").pathname; } catch {}
+  if (pathname !== "/__dsh-config") return false;
+  if (req.method === "GET") { sendConfigPage(req, res); return true; }
+  if (req.method === "POST") {
     if (!isAuthorized(req)) { res.writeHead(401, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "unauthorized" })); return true; }
     try {
       const parsed = JSON.parse(await readRequestBody(req));
