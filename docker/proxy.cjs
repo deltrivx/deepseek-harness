@@ -319,7 +319,12 @@ const LAYOUT_FIX_CSS = [
   // max-width:712px —— 那些是用户评价「治标不治本」的 PC 端对齐补丁，
   // 已永久删除。这里只恢复圆角与卡片背景本身。
   `[class*="_column"],[class*="Column"]{border-radius:22px !important;}`,
-  `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;}`,
+  // markdown：圆角面板背景。box-sizing:border-box 是关键 —— 原始设计（备份
+  // proxy.cjs 第 341 行）只有 padding:10px 20px，没指定 box-sizing，等于假设
+  // 上游用 border-box。但线上当前 hash 下实测 content-box，加 padding 会把
+  // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
+  // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
+  `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
   // ---- 移动端布局修复（max-width:640px）----
   //
   // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css +
