@@ -407,8 +407,13 @@ function renderAppearanceCss(cfg) {
     // 同样用 .BCrMEa_* + [class*="settingsPanel"] 双选择器。
     // z-index 要高于侧栏 overlay（z-index=50），否则侧栏 logo / 工作区
     // 文字会从面板下面透出来，看起来像没遮挡。
-    `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;z-index:60 !important;background:var(--dsw-alias-bg-layer-1,rgba(20,20,22,.96)) !important;}`,
-    `.BCrMEa_overlay,[class$="_overlay"]{z-index:60 !important;}`,
+    // 注意：这里不能用 var(--dsw-alias-bg-layer-1, ...) — 该变量在深色
+    // 主题里实际是 32% 透明的 rgba，回退值永远不会生效，面板会半透。
+    // 改为硬编码的不透明背景色：深色 #14141a / 浅色 #ffffff，调用栈两层。
+    // 由于我们注入在 <head> 末尾 + !important，能压过组件 CSS 的同名背景。
+    `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;z-index:60 !important;background:#14141a !important;background-color:#14141a !important;}`,
+    `body[data-ds-light-theme] .BCrMEa_panel,body[data-ds-light-theme] [class*="settingsPanel"]{background:#ffffff !important;background-color:#ffffff !important;}`,
+    `.BCrMEa_overlay,[class$="_overlay"]{z-index:60 !important;background:rgba(0,0,0,.5) !important;}`,
     `.BCrMEa_nav,[class$="_nav"]:not([role=navigation]){width:100% !important;height:auto !important;max-height:56px !important;flex:0 0 auto !important;flex-direction:row !important;overflow-x:auto !important;overflow-y:hidden !important;padding:8px 12px !important;border-bottom:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;}`,
     `.BCrMEa_navTitle{display:none !important;}`,
     `.BCrMEa_navList{flex-direction:row !important;flex-wrap:nowrap !important;gap:8px !important;height:40px !important;align-items:center !important;}`,
