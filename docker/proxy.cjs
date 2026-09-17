@@ -318,12 +318,16 @@ function renderAppearanceCss(cfg) {
     `textarea,input,select{background-color:rgba(255,255,255,${alpha(base.inputAlpha)}) !important;${inputBlur}color:#1f2328 !important;}`,
     `body[data-ds-dark-theme] main{background-color:rgba(28,28,30,${alpha(Math.min(1, base.panelAlpha * 1.3))}) !important;}`,
     `body[data-ds-dark-theme] textarea,body[data-ds-dark-theme] input,body[data-ds-dark-theme] select{background-color:rgba(28,28,30,${alpha(Math.min(1, base.inputAlpha * 1.4))}) !important;color:#e6e6e6 !important;}`,
+    // Conversation / answer blocks: card-like, inset from both sides, rounded,
+    // using the same surface token as the rest of the workspace.
+    // "_markdown_1wejo_*" is the file-type icon for .md files (it sits next to
+    // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
+    // must be excluded or every .md file chip would get a card around it.
     // Every row inside the message column (user turns, "已思考", "思考",
     // "读取 …" tool calls, usage footer, error rows…) is a *sibling* of the
-    // markdown block, not a child. Styling only the markdown block left all of
-    // them flush at the column edge while the composer input text sits at a
-    // 14px inset. Inset the shared row container instead so ALL rows line up
-    // with the composer text.
+    // markdown block, not a child. Styling only the markdown block left all
+    // of them flush at the column edge while the composer text sits at an
+    // inset. Inset the shared row container so ALL rows line up together.
     `[class~="_4SmsrG_flowItem"]{padding-left:14px !important;padding-right:14px !important;}`,
     // Conversation / answer blocks: card-like, rounded, using the same surface
     // token as the rest of the workspace. The negative margin cancels the row
@@ -332,7 +336,12 @@ function renderAppearanceCss(cfg) {
     // "_markdown_1wejo_*" is the .md file-type icon (it sits next to
     // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
     // must be excluded or every .md file chip would get a card around it.
-    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:-14px !important;margin-right:-14px !important;padding:10px 14px !important;}`,
+    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:-14px !important;margin-right:-14px !important;padding:10px 20px !important;}`,
+    // Inner text boxes: give the user bubble and the composer input the same
+    // 20px side inset as the answer card, so no text sits flush against its
+    // own box edge, and all three still start on one shared vertical line.
+    // The composer input ships padL=14 / padR=8 (asymmetric) — hence the fix.
+    `[class*="_bubble"],[class*="_input"]{padding-left:20px !important;padding-right:20px !important;}`,
     // Message column container ("直角背景"): round its corners and lock its
     // width to the visible composer card so the two panels always share the
     // exact same width, regardless of viewport or upstream CSS variable changes.
