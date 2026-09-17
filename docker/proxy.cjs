@@ -427,12 +427,13 @@ function renderAppearanceCss(cfg) {
     `[class$="_themeCube"]{flex:1 1 0 !important;min-width:0 !important;max-width:88px !important;height:88px !important;}`,
     // 通用弹层（工作区选择器、确认弹窗等）：_dialog_* 默认是 14% 透明，
     // 透出背景里的选择器图标 / 空状态文字。直接覆盖为不透明深色；
-    // 浅色主题同样翻成白色。
-    `[class*="_dialog"]{background-color:#14141a !important;background:#14141a !important;border-radius:12px !important;}`,
+    // 浅色主题同样翻成白色。同时加阴影 + 提 z-index 让 dialog 浮在
+    // backdrop 之上更有层次。
+    `[class*="_dialog"]{background-color:#14141a !important;background:#14141a !important;border-radius:12px !important;box-shadow:0 16px 48px rgba(0,0,0,.5) !important;z-index:1100 !important;}`,
     `body[data-ds-light-theme] [class*="_dialog"]{background-color:#ffffff !important;background:#ffffff !important;}`,
-    // 弹层根（_root_*）固定铺满屏幕，给一个半透明黑色 backdrop，避免
-    // 弹层后面的内容抢焦点。
-    `[class*="_root_"]:has([class*="_dialog"]){background-color:rgba(0,0,0,.5) !important;}`,
+    // 弹层根（_root_*）固定铺满屏幕，给一个深色 backdrop 让弹层与背景
+    // 拉开层次（DSH body 本身就是深色，0.5 黑叠在深色上看不出，必须更深）。
+    `[class*="_root_"]:has([class*="_dialog"]){background-color:rgba(0,0,0,.72) !important;}`,
     // 选择器下拉（_list_* scrollable portal）：32% 透明同样修成不透明。
     `[class*="_list_"][class*="portal"]{background-color:#14141a !important;background:#14141a !important;border:1px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;border-radius:10px !important;max-width:calc(100vw - 24px) !important;}`,
     `body[data-ds-light-theme] [class*="_list_"][class*="portal"]{background-color:#ffffff !important;background:#ffffff !important;}`,
