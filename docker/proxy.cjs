@@ -336,12 +336,16 @@ function renderAppearanceCss(cfg) {
     // "_markdown_1wejo_*" is the .md file-type icon (it sits next to
     // _code_/_excel_/_pdf_ and only sets a colour variable), so icon elements
     // must be excluded or every .md file chip would get a card around it.
-    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:-14px !important;margin-right:-14px !important;padding:10px 20px !important;}`,
+    `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:16px !important;margin-left:0 !important;margin-right:0 !important;padding:10px 20px !important;}`,
     // Inner text boxes: give the user bubble and the composer input the same
     // 20px side inset as the answer card, so no text sits flush against its
     // own box edge, and all three still start on one shared vertical line.
     // The composer input ships padL=14 / padR=8 (asymmetric) — hence the fix.
     `[class*="_bubble"],[class*="_input"]{padding-left:20px !important;padding-right:20px !important;}`,
+    // The answer card no longer uses a negative margin, so its box now sits at
+    // the 14px-inset line. Pull the composer input in by the same 14px so its
+    // text keeps sharing one vertical line with the answer-card text.
+    `[class*="_input"]{margin-left:14px !important;margin-right:14px !important;}`,
     // Message column container ("直角背景"): round its corners and lock its
     // width to the visible composer card so the two panels always share the
     // exact same width, regardless of viewport or upstream CSS variable changes.
