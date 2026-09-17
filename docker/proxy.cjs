@@ -383,6 +383,10 @@ function renderAppearanceCss(cfg) {
     `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
     // 拖拽把在手机上没意义
     `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
+    // overlayLayer 是 sidebar overlay 的点击关闭层 — 桌面不显示，移动端
+    // 展开 sidebar 时需要变成半透明黑色 backdrop，点击关闭侧栏。
+    `[class$="_overlayLayer"]{display:none !important;}`,
+    `.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_overlayLayer"],.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_overlayLayer{display:block !important;background-color:rgba(0,0,0,.5) !important;z-index:49 !important;}`,
     // 任何仍然被写死成 712px 的面板，在窄屏改成跟随视口。
     `[class*="_column"],[class*="Column"],[class*="_card"],[class*="composer"],[class*="Composer"]{max-width:100% !important;width:auto !important;}`,
     // 长内容（代码块 / 表格 / 长单词）不允许把页面顶宽。
