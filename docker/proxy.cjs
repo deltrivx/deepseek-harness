@@ -325,6 +325,21 @@ const LAYOUT_FIX_CSS = [
   // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
   // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
   `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
+  // markdown 卡视觉宽度对齐底部 composer 卡 (PbIGXq_card)。
+  //
+  // 上游设计：_4SmsrG_column 的 max-width = --dsh-conversation-column-width (1160px)，
+  // 但 composerCard 的 max-width = --dsh-composer-card-max-width =
+  //   clamp(680, 1160*.64, 920) + 32 = 774
+  // 实测桌面 1440×900：column = 742，composerCard = 774，**差 32px**。
+  // 用户反馈"外部文本框背景没和底部工作区对齐"即此 32px 缺口。
+  //
+  // 修法：给 markdown 加 margin-left/right:-16，让卡片视觉外宽 = column + 32 =
+  // 774 = composerCard。box-sizing:border-box 保证 padding 10/20 不撑外宽，文字
+  // 位置保持 column 内 padding 的偏移（不变）。
+  //
+  // 仅桌面（min-width:1024px）启用，移动端 column 已 max-width:100% / width:auto，
+  // 再加 -16 margin 会让 markdown 视觉宽度超出 viewport。
+  `@media (min-width:1024px){[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){margin-left:-16px !important;margin-right:-16px !important;}}`,
   // ---- 顶面板 kBmzhq_header（会话头 + 标签栏）----
   //
   // 圆角面板背景：跟 markdown 同样的 layer-1 颜色 + 22px 圆角，与底部 composer
@@ -376,8 +391,13 @@ const LAYOUT_FIX_CSS = [
   `.bR7R9W_rightbarCol,[class$="_rightbarCol"]{grid-column:2 !important;}`,
   // 侧栏改 overlay：脱离 grid，覆盖在中心列上方。
   `.bR7R9W_sidebarCol,[class$="_sidebarCol"]{position:absolute !important;left:0 !important;top:0 !important;bottom:0 !important;width:min(86vw,320px) !important;z-index:50 !important;transform:translateX(-100%);transition:transform .22s ease !important;box-shadow:4px 0 24px rgba(0,0,0,.35) !important;}`,
-  // 展开 → 滑入；折叠 → 缩成 56px rail（不要 translateX 把内容推出屏幕）。
-  `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;}`,
+  // 展开 → 滑入并铺满整个 viewport（mobile 上"抽屉"行为：占满整屏，挡住
+  // centerCol 内容；用户回到侧栏外点不到 center）。原 min(86vw,320px) 改成
+  // 100vw，是因为 viewport ≤640 时 320px 抽屉让右半屏幕仍然显示 centerCol
+  // 内容（"探索未至之境"等 hero 文案透出来），视觉上像"侧栏没打开 / 布局错
+  // 乱"。100vw 后 sidebar 完全占满，centerCol 内容暂时性被遮蔽。
+  `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;width:100vw !important;max-width:100vw !important;background:#14141a !important;background-color:#14141a !important;}`,
+  `body[data-ds-light-theme] .bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,body[data-ds-light-theme] .bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{background:#ffffff !important;background-color:#ffffff !important;}`,
   `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
   // 拖拽把在手机上没意义
   `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
