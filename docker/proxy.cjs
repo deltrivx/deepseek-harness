@@ -437,6 +437,12 @@ function renderAppearanceCss(cfg) {
     // 选择器下拉（_list_* scrollable portal）：32% 透明同样修成不透明。
     `[class*="_list_"][class*="portal"]{background-color:#14141a !important;background:#14141a !important;border:1px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;border-radius:10px !important;max-width:calc(100vw - 24px) !important;}`,
     `body[data-ds-light-theme] [class*="_list_"][class*="portal"]{background-color:#ffffff !important;background:#ffffff !important;}`,
+    // 空状态 composer 卡片（PbIGXq_root/hero/...）默认 align-items:center +
+    // flex-grow:0，width 被锁成 ~168px，输入框只剩 136px，无法输入。
+    // 强制 root 横向伸展 + card flex-grow:1，让输入框占满 composer 区域。
+    `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;}`,
+    `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;}`,
+    `[class*="PbIGXq_input"]{width:100% !important;min-height:44px !important;}`,
     `}`,
   ].join("");
   // A background.css dropped next to the image is still appended last, so
