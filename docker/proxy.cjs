@@ -509,11 +509,10 @@ function appearancePanelScript() {
     "function deb(){clearTimeout(timer);timer=setTimeout(apply,120)}",
     "function apply(){if(!link)return;var p=[];for(var k in C){p.push(k+'='+encodeURIComponent(C[k]))}link.href='/__dsh-appearance.css?'+p.join('&')+'&t='+Date.now();say('未保存 —— 满意后点「保存」')}",
     "function say(t){msg.textContent=t||''}",
-    "function setOpen(v){panel.classList.toggle('open',v);wrap.classList.toggle('open',v);try{localStorage.setItem('dshu-open',v?'1':'0')}catch(e){}}",
+    "function setOpen(v){panel.classList.toggle('open',v);wrap.classList.toggle('open',v)}",
     // Only the landing page keeps the launcher, and never while a dialog or
     // overlay is on top of it.
     "function shouldShow(){",
-    " if(panel.classList.contains('open'))return true;",
     " var p=location.pathname||'/';",
     " if(p!=='/'&&p!=='/index.html')return false;",
     " if(document.querySelector('[role=\"dialog\"],[role=\"alertdialog\"],[class*=\"mask\"],[class*=\"Mask\"],[class*=\"modal\"],[class*=\"Modal\"]'))return false;",
@@ -523,6 +522,9 @@ function appearancePanelScript() {
     "function syncVisibility(){clearTimeout(syncTimer);syncTimer=setTimeout(function(){wrap.style.display=shouldShow()?'':'none'},80)}",
     "new MutationObserver(syncVisibility).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','role','style']});",
     "window.addEventListener('popstate',syncVisibility);",
+    // SPA route changes go through pushState/replaceState, which do NOT fire
+    // popstate — patch them so the launcher still hides on non-home routes.
+    "['pushState','replaceState'].forEach(function(k){var o=history[k];if(o)history[k]=function(){var r=o.apply(this,arguments);syncVisibility();return r}});",
     "syncVisibility();",
     "build();",
     "wrap.querySelector('#dshu-btn').onclick=function(){setOpen(true)};",
@@ -549,7 +551,9 @@ function appearancePanelScript() {
     "  .catch(function(e){say('上传失败：'+e.message)});",
     " file.value='';",
     "};",
-    "try{if(localStorage.getItem('dshu-open')==='1')setOpen(true)}catch(e){}",
+    // Never restore the open state across reloads: a refresh must always fall
+    // back to the collapsed launcher button.
+    "try{localStorage.removeItem('dshu-open')}catch(e){}",
     "};",
     "if(document.body&&document.body.nodeName){boot()}else{document.addEventListener('DOMContentLoaded',boot)}",
     "})()",
