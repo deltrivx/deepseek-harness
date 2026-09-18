@@ -325,24 +325,30 @@ const LAYOUT_FIX_CSS = [
   // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
   // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
   `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
-  // 整个消息列的视觉宽度对齐底部 composer 卡（**整段背景区域，不只单个 markdown 卡**）。
+  // 整个文本区域的**背景**视觉宽度对齐底部 composer 卡 —— 只扩背景，不碰布局。
   //
-  // 用户 2026-09-18 反馈："是整个文本背景区域，而不是单个对话背景区域"。
-  // 即：消息列表里所有行（用户消息、思考、读取、工具调用、用量、错误等）背景
-  // 都要和底部 composer 卡同宽，不是单独把 markdown 卡扩宽。
+  // 用户 2026-09-18 反馈：
+  //   · "是整个文本背景区域，而不是单个对话背景区域"
+  //     → 改外层 column，不要改单个 markdown 卡
+  //   · "只修改整体背景，文本区域文字布局不要变动"
+  //     → 不能改 column 的 max-width / width（那会改变文字可用宽度、换行位置）
   //
-  // 上游设计（实测）：
-  //   _4SmsrG_column 的 max-width 用 --dsh-conversation-column-width (1160px) →
-  //     1440×900 视口下 column 实际 w=742
-  //   PbIGXq_card 的 max-width 用 --dsh-composer-card-max-width =
-  //     clamp(680, 1160*.64, 920) + 32 = 774
-  //     → composerCard 实际 w=774
-  // 整段消息列比 composer 卡窄 32px（差）。
+  // 上游设计：column 实际 w=742，composerCard 实际 w=774，差 32px。
+  // 之前两轮都试图改盒子宽度（markdown margin -16 / column max-width 774），
+  // 都改到了布局 → 用户两次都否掉。
   //
-  // 鲁棒写法：让 column 直接共用上游给 composerCard 用的那个 CSS 变量
-  // --dsh-composer-card-max-width，两者永远锁同宽，未来上游怎么改都不会脱钩。
-  // box-sizing 默认 border-box 不动。仅桌面启用，移动端不约束。
-  `@media (min-width:1024px){[class*="_column"],[class*="_Column"]{max-width:var(--dsh-composer-card-max-width,774px) !important;width:var(--dsh-composer-card-max-width,774px) !important;}}`,
+  // 正确修法：**box-shadow 的 spread 向外画 16px 背景环**。
+  //   · box-shadow 不占布局空间 → column 盒子仍是 742，文字换行、行宽、位置
+  //     全部不变
+  //   · box-shadow 自动跟随 border-radius → 22px 圆角完整保留，视觉上就是
+  //     一个 774 宽（742 + 16*2）的圆角面板
+  //   · 纯视觉层，开了关了背景都一样的行为
+  //
+  // 颜色必须和 column 自身背景一致，否则外环和本体有色差。column 自身背景
+  // 上游是 layer-1 的 70% alpha（实测 color(srgb .137 .137 .141 / .7)），
+  // 这里用 color-mix 复现同一个值，且仍走 --dsw-alias-bg-layer-1 变量 →
+  // 明暗主题自动适配。
+  `@media (min-width:1024px){[class*="_column"],[class*="_Column"]{box-shadow:0 0 0 16px color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent) !important;}}`,
   // ---- 顶面板 kBmzhq_header（会话头 + 标签栏）----
   //
   // 圆角面板背景：跟 markdown 同样的 layer-1 颜色 + 22px 圆角，与底部 composer
