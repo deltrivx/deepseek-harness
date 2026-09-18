@@ -325,21 +325,24 @@ const LAYOUT_FIX_CSS = [
   // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
   // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
   `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
-  // markdown 卡视觉宽度对齐底部 composer 卡 (PbIGXq_card)。
+  // 整个消息列的视觉宽度对齐底部 composer 卡（**整段背景区域，不只单个 markdown 卡**）。
   //
-  // 上游设计：_4SmsrG_column 的 max-width = --dsh-conversation-column-width (1160px)，
-  // 但 composerCard 的 max-width = --dsh-composer-card-max-width =
-  //   clamp(680, 1160*.64, 920) + 32 = 774
-  // 实测桌面 1440×900：column = 742，composerCard = 774，**差 32px**。
-  // 用户反馈"外部文本框背景没和底部工作区对齐"即此 32px 缺口。
+  // 用户 2026-09-18 反馈："是整个文本背景区域，而不是单个对话背景区域"。
+  // 即：消息列表里所有行（用户消息、思考、读取、工具调用、用量、错误等）背景
+  // 都要和底部 composer 卡同宽，不是单独把 markdown 卡扩宽。
   //
-  // 修法：给 markdown 加 margin-left/right:-16，让卡片视觉外宽 = column + 32 =
-  // 774 = composerCard。box-sizing:border-box 保证 padding 10/20 不撑外宽，文字
-  // 位置保持 column 内 padding 的偏移（不变）。
+  // 上游设计（实测）：
+  //   _4SmsrG_column 的 max-width 用 --dsh-conversation-column-width (1160px) →
+  //     1440×900 视口下 column 实际 w=742
+  //   PbIGXq_card 的 max-width 用 --dsh-composer-card-max-width =
+  //     clamp(680, 1160*.64, 920) + 32 = 774
+  //     → composerCard 实际 w=774
+  // 整段消息列比 composer 卡窄 32px（差）。
   //
-  // 仅桌面（min-width:1024px）启用，移动端 column 已 max-width:100% / width:auto，
-  // 再加 -16 margin 会让 markdown 视觉宽度超出 viewport。
-  `@media (min-width:1024px){[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){margin-left:-16px !important;margin-right:-16px !important;}}`,
+  // 鲁棒写法：让 column 直接共用上游给 composerCard 用的那个 CSS 变量
+  // --dsh-composer-card-max-width，两者永远锁同宽，未来上游怎么改都不会脱钩。
+  // box-sizing 默认 border-box 不动。仅桌面启用，移动端不约束。
+  `@media (min-width:1024px){[class*="_column"],[class*="_Column"]{max-width:var(--dsh-composer-card-max-width,774px) !important;width:var(--dsh-composer-card-max-width,774px) !important;}}`,
   // ---- 顶面板 kBmzhq_header（会话头 + 标签栏）----
   //
   // 圆角面板背景：跟 markdown 同样的 layer-1 颜色 + 22px 圆角，与底部 composer
