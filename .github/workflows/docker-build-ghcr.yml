@@ -15,7 +15,26 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # 先跑外观引擎的回归测试，再构建镜像。
+  # 这套断言守的是「背景功能绝不改动原生布局」：只允许颜色类属性，
+  # 几何属性只能出现在 html::before 壁纸图层里，且禁止 backdrop-filter
+  # 与 body * 全量选择器。任何一条被破坏都直接拦在构建之前。
+  verify-appearance-css:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify appearance engine (layout-neutral guarantee)
+        run: node docker/_test_appearance_css.js
+
   build-and-push:
+    needs: verify-appearance-css
     runs-on: ubuntu-latest
     permissions:
       contents: read

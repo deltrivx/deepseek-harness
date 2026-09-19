@@ -25,109 +25,123 @@ const APPEARANCE_ROUTE = "/__dsh-appearance";
 const APPEARANCE_CSS_ROUTE = "/__dsh-appearance.css";
 const APPEARANCE_UPLOAD_ROUTE = "/__dsh-appearance/background";
 
-// Single source of truth for the look. Everything the old hand-edited
-// background.css used to do is now a field here, so the in-page panel can
-// drive it without touching files.
+// ---------------------------------------------------------------------------
+// 外观（背景）引擎 —— 纯装饰层，几何零影响
+//
+// 硬性约束（由 paintRule() 在生成期强制校验，违反直接抛错）：
+//
+//   1. 应用元素上只允许改颜色类属性。padding / margin / width / max-width /
+//      height / flex / grid / display / overflow / box-sizing / font-size /
+//      position / z-index 一律禁止 —— 这些正是上一版把移动端布局彻底搞坏的
+//      元凶（logo 被拉伸到满屏、composer 卡片溢出视口、文字被裁切）。
+//
+//   2. 应用元素上禁止 backdrop-filter / filter。二者会让元素成为「绝对定位与
+//      固定定位后代的包含块」，并把它升级为层叠上下文 —— 上游大量布局由 JS
+//      测量后写成内联样式，包含块一变，侧栏宽度、弹层位置就会跟着变。这是
+//      「不开背景一切正常、一开背景布局全乱」的直接原因。
+//
+//   3. 不使用 `body *` 这类全量选择器。实测主题变量直接定义在 body 的样式规则
+//      里（并非 inline style），后代用 var() 自然继承，逐个元素重新推导既不
+//      必要、又会把作用范围放大到整棵 DOM。
+//
+//   4. 壁纸放在自己的 html::before 图层里（position:fixed + z-index:-1）。
+//      它不参与应用布局：柔化与压暗都作用在这一层上，界面元素完全不受影响。
+//
+// 因此「关闭壁纸 + 关闭圆角」时输出为空字符串 —— 与官方镜像表现完全一致。
+// ---------------------------------------------------------------------------
+
+// 颜色类属性白名单：应用元素唯一允许改动的集合
+const PAINT_PROPERTIES = new Set([
+  "background",
+  "background-color",
+  "background-image",
+  "background-size",
+  "background-position",
+  "background-repeat",
+  "background-attachment",
+  "border-radius",
+  "border-color",
+  "box-shadow",
+  "color",
+  "outline-color",
+  "text-shadow",
+  "mix-blend-mode",
+]);
+
+// 壁纸图层专用白名单：只有我们自己的 html::before 允许使用几何属性
+const LAYER_PROPERTIES = new Set([
+  "content",
+  "position",
+  "inset",
+  "z-index",
+  "pointer-events",
+  "background-image",
+  "background-size",
+  "background-position",
+  "background-repeat",
+  "background-attachment",
+  "filter",
+  "-webkit-filter",
+  "transform",
+]);
+
+function assertAllowed(decls, allowed, where, kind) {
+  for (const name of Object.keys(decls)) {
+    if (!allowed.has(String(name).toLowerCase())) {
+      throw new Error(
+        `[DSH-Proxy] 外观样式违规：${where} 试图使用非${kind}属性 "${name}"。` +
+        `外观功能只允许改颜色与背景，任何几何属性都会破坏原生布局。`
+      );
+    }
+  }
+}
+
+function declarations(decls) {
+  return Object.entries(decls).map(([name, value]) => `${name}:${value} !important`).join(";");
+}
+
+// 应用元素：只允许颜色类声明
+function paintRule(selector, decls) {
+  assertAllowed(decls, PAINT_PROPERTIES, selector, "颜色类");
+  return `${selector}{${declarations(decls)}}`;
+}
+
+// 壁纸图层：允许几何属性（该图层本身不参与应用布局）
+function layerRule(selector, decls) {
+  assertAllowed(decls, LAYER_PROPERTIES, selector, "图层类");
+  return `${selector}{${declarations(decls)}}`;
+}
+
+// 单一事实来源：面板、接口与样式表全部读它。
+// 字段沿用既有 appearance.json，v1 的 subtle / blurMain / blurInput 已废弃，
+// sanitize 时会被自动丢弃（不需要单独的迁移步骤）。
 const DEFAULT_APPEARANCE = {
   enabled: true,
-  surface: 0.32,
-  subtle: 0.55,
-  container: 0.14,
-  blur: 4,
-  blurMain: 5,
-  blurInput: 2,
-  panelAlpha: 0.14,
-  inputAlpha: 0.05,
+  rounded: true,
+  surface: 0.35,
+  container: 0.45,
+  blur: 0,
   dim: 0,
   size: "cover",
   position: "center",
+  panelAlpha: 0.14,
+  inputAlpha: 0.05,
 };
+const APPEARANCE_BOOLEANS = ["enabled", "rounded"];
 const APPEARANCE_NUMBERS = {
   surface: [0, 1],
-  subtle: [0, 1],
   container: [0, 1],
   panelAlpha: [0, 1],
   inputAlpha: [0, 1],
   dim: [0, 0.9],
   blur: [0, 40],
-  blurMain: [0, 40],
-  blurInput: [0, 40],
 };
 const APPEARANCE_SIZES = ["cover", "contain", "100% 100%", "auto"];
 const APPEARANCE_POSITIONS = ["center", "top", "bottom", "left", "right", "top left", "top right"];
 
-// The theme presenter writes every --dsw-* token onto document.body as inline
-// style, and portals (dialogs, tooltips, menus) live outside #root. So the
-// overrides cannot target a single element: body keeps the originals (snapshot
-// into --dsw-bgw-N) while every descendant re-derives them with color-mix.
-// This stays adaptive to light/dark without hardcoding any palette.
-const SURFACE_TOKENS = [
-  "--dsw-alias-bg-base",
-  "--dsw-alias-bg-l1",
-  "--dsw-alias-bg-l2",
-  "--dsw-alias-bg-layer-1",
-  "--dsw-alias-bg-layer-2",
-  "--dsw-alias-bg-layer-3",
-  "--dsw-alias-bg-layer-4",
-  "--dsw-alias-bg-overlay",
-  "--dsw-alias-bg-module-platform",
-  "--dsw-alias-bg-multi-select",
-  "--dsw-alias-bg-skeleton",
-  "--dsw-alias-markdown-code-block",
-  "--dsw-alias-markdown-code-block-banner",
-  "--dsw-alias-markdown-code-segment-selected",
-  "--dsw-alias-markdown-code-segment-unselected",
-  "--dsw-alias-markdown-inline-code",
-  "--dsw-alias-markdown-citation",
-  "--dsw-alias-markdown-placeholder",
-  "--dsw-alias-markdown-tag",
-  "--dsw-specific-sidebar-fill",
-  "--dsw-specific-sidebar-nav-item-active",
-  "--dsw-specific-sidebar-nav-item-active-accent",
-  "--dsw-specific-sidebar-nav-item-hover",
-  "--dsw-specific-menu",
-  "--dsw-specific-bubble",
-  "--dsw-specific-bubble-highlight",
-  "--dsw-specific-input-major",
-  "--dsw-specific-login-input",
-  "--dsw-alias-fill-l2",
-  "--dsw-alias-fill-tertiary",
-  "--dsw-alias-fill-tsp-secondary",
-  "--dsw-alias-toast-bg",
-  "--dsw-alias-tooltip-bg",
-  "--dsw-hovercard-bg",
-];
-
-// Hover / scrollbar / toolbar fills are already subtle; only nudge them so
-// interactive affordances do not disappear.
-const SUBTLE_TOKENS = [
-  "--dsw-alias-interactive-bg-active",
-  "--dsw-alias-interactive-bg-hover",
-  "--dsw-alias-interactive-bg-hover-accent",
-  "--dsw-alias-interactive-bg-hover-danger",
-  "--dsw-alias-interactive-bg-hover-solid",
-  "--dsw-alias-scrollbar-bg-l1",
-  "--dsw-alias-scrollbar-bg-l2",
-  "--dsw-alias-button-elevated-fill",
-  "--dsw-alias-button-floating-fill",
-  "--dsw-alias-button-tool-bar-fill",
-  "--dsw-alias-button-ghost-active-fill",
-];
 
 let activeCookie = "";
 
-function buildTokenCss(surfaceAlpha, subtleAlpha) {
-  const names = SURFACE_TOKENS.concat(SUBTLE_TOKENS);
-  const snapshot = `--dsw-bgw-layer1:var(--dsw-alias-bg-layer-1);` + names.map((name, index) => `--dsw-bgw-${index}:var(${name})`).join(";");
-  const override = names
-    .map((name, index) => {
-      if (index === 0) return `${name}:transparent !important`;
-      const percent = Math.round((index < SURFACE_TOKENS.length ? surfaceAlpha : subtleAlpha) * 100);
-      return `${name}:color-mix(in srgb,var(--dsw-bgw-${index}) ${percent}%,transparent) !important`;
-    })
-    .join(";");
-  return `body{${snapshot}}body *{${override}}`;
-}
 
 function clampUnit(raw, fallback, min, max) {
   const parsed = Number.parseFloat(raw);
@@ -218,32 +232,29 @@ function pruneBackups(file, keep = 5) {
 }
 
 function readCssFile(file) {
+  // 只有注释的文件视同空文件：否则用户把 background.css 清成注释后，
+  // 关闭全部外观仍会注入一个 <style> 标签，「零注入」的保证就破了。
   try {
     const css = fs.readFileSync(file, "utf8");
-    return css.trim() ? css : "";
+    const body = css.replace(/\/\*[\s\S]*?\*\//g, "").trim();
+    return body ? css : "";
   } catch {
     return "";
   }
 }
 
 function appearanceFromEnv() {
-  // Environment variables stay supported as the zero-config path, but a saved
-  // appearance.json always wins so the in-page panel is authoritative.
+  // 环境变量仍是零配置路径；一旦存在 appearance.json，则以它为准（面板是权威）。
   const cfg = { ...DEFAULT_APPEARANCE };
   const layerAlpha = Number.parseFloat(BACKGROUND_LAYER_ALPHA);
   if (Number.isFinite(layerAlpha)) {
     cfg.surface = Math.min(1, Math.max(0, layerAlpha));
-    cfg.subtle = Math.min(1, cfg.surface + 0.2);
-    cfg.container = cfg.surface;
+    cfg.container = Math.min(1, Math.max(0, layerAlpha));
   }
   const dim = Number.parseFloat(BACKGROUND_DIM);
   if (Number.isFinite(dim)) cfg.dim = Math.min(0.9, Math.max(0, dim));
   const blur = Number.parseFloat(BACKGROUND_BLUR);
-  if (Number.isFinite(blur) && blur > 0) {
-    cfg.blur = blur;
-    cfg.blurMain = Math.round(blur * 1.3);
-    cfg.blurInput = Math.max(0, Math.round(blur * 0.45));
-  }
+  if (Number.isFinite(blur) && blur > 0) cfg.blur = Math.min(40, blur);
   cfg.size = BACKGROUND_SIZE;
   cfg.position = BACKGROUND_POSITION;
   if (BACKGROUND_ENABLED === "false") cfg.enabled = false;
@@ -256,14 +267,16 @@ function loadAppearance() {
     const saved = JSON.parse(fs.readFileSync(APPEARANCE_FILE, "utf8"));
     if (saved && typeof saved === "object") return sanitizeAppearance({ ...cfg, ...saved });
   } catch {
-    // No saved file yet: env / built-in defaults apply.
+    // 还没有保存过：用环境变量 / 内置默认值。
   }
   return cfg;
 }
 
 function sanitizeAppearance(input) {
   const cfg = { ...DEFAULT_APPEARANCE };
-  if (typeof input.enabled === "boolean") cfg.enabled = input.enabled;
+  for (const key of APPEARANCE_BOOLEANS) {
+    if (typeof input[key] === "boolean") cfg[key] = input[key];
+  }
   for (const key of Object.keys(APPEARANCE_NUMBERS)) {
     const [min, max] = APPEARANCE_NUMBERS[key];
     const parsed = Number.parseFloat(input[key]);
@@ -271,6 +284,18 @@ function sanitizeAppearance(input) {
   }
   if (APPEARANCE_SIZES.includes(String(input.size))) cfg.size = String(input.size);
   if (APPEARANCE_POSITIONS.includes(String(input.position))) cfg.position = String(input.position);
+
+  // v1 的 surface / container 与现在的语义不同：v1 的 container 是「面板透明度」，
+  // 数值越小面板越透（实测存下来的 0.14 会把侧栏压得几乎看不见）。
+  // 检测到 v1 遗留字段时把这两个透明度恢复为默认值，否则升级后界面直接不可读。
+  // 其余字段（enabled / blur / dim / size / position）语义未变，继续沿用。
+  const isLegacyV1 = ["subtle", "blurMain", "blurInput"].some((key) => key in input);
+  if (isLegacyV1) {
+    cfg.surface = DEFAULT_APPEARANCE.surface;
+    cfg.container = DEFAULT_APPEARANCE.container;
+  }
+
+  // 未在白名单里的历史字段（subtle / blurMain / blurInput 等）在此自然丢弃。
   return cfg;
 }
 
@@ -279,7 +304,7 @@ function appearanceFromQuery(params) {
   for (const key of Object.keys(DEFAULT_APPEARANCE)) {
     if (!params.has(key)) continue;
     const raw = params.get(key);
-    if (key === "enabled") patch.enabled = raw === "true" || raw === "1";
+    if (APPEARANCE_BOOLEANS.includes(key)) patch[key] = raw === "true" || raw === "1";
     else if (key === "size" || key === "position") patch[key] = raw;
     else patch[key] = Number.parseFloat(raw);
   }
@@ -287,235 +312,157 @@ function appearanceFromQuery(params) {
 }
 
 // ---------------------------------------------------------------------------
-// 两层分离（2026-09-18 重构）
+// 样式表组装（2026-09-20 重写）
 //
-// 之前所有布局补丁都写在 renderAppearanceCss() 里，而它在 enabled=false 时
-// 直接 return "" —— 于是「关背景 = 零补丁（原始布局）」「开背景 = 全部补丁
-// 一次性生效」。用户看到的现象就是：不开背景一切正常，一开背景布局全乱。
+// 上一版把「布局补丁」与「背景」混在一起：LAYOUT_FIX_CSS 里有 padding /
+// width:774px / max-width:100% / min-height:44px / font-size:16px 等大量几何
+// 规则，而且**无条件注入**，连关掉背景也照样生效 —— 移动端 logo 被拉伸到满屏、
+// composer 卡片溢出视口、文字被裁切，都是它造成的。
 //
-// 现在严格分层：
-//   LAYOUT_FIX_CSS        布局层，永远注入，不受背景开关影响。只做移动端
-//                         适配所必需的几何与不透明度，桌面端一律不碰。
-//   renderAppearanceCss() 背景层，仅当 enabled 且有背景图时才产出内容。
-//                         只改颜色 / 背景图 / 模糊，**绝不改任何几何属性**
-//                         （padding / margin / width / max-width / flex /
-//                         grid / position 一律禁止出现在这里）。
+// 现在只组装三类内容，且各自都有硬护栏：
+//   roundedCss()   圆角层：只声明 border-radius，不碰任何尺寸与间距。
+//   tokenCss()     表面层：只覆写「颜色类设计令牌」，让壁纸透出来。
+//   wallpaperCss() 壁纸层：html::before 独立图层，几何属性只允许出现在这里。
 //
-// 这样「开关背景」只会切换背景图与表面透明度，布局像素级不变。
-const LAYOUT_FIX_CSS = [
-  // ---- 面板圆角背景（2026-09-18 恢复，沿用之前的圆角设计）----
-  //
-  // 之前的两处圆角：
-  //   1. 顶面板（消息列容器 _column）：22px。上游 column 自带 layer-1
-  //      背景色但 border-radius:0，看着就是一块「直角背景」，加 22px
-  //      后成为一张卡片。
-  //   2. markdown 回答卡：16px + layer-1 背景色，让 AI 回复像圆角卡片。
-  //
-  // border-radius 是**纯视觉裁剪**，不改变布局盒模型尺寸（width / height /
-  // position 都不受影响），所以放在布局层全局生效是安全的：开关背景都
-  // 保持一致的圆角外观，不会出现「只有开背景才有圆角」的割裂。
-  //
-  // 刻意**不恢复**之前配套的 padding:20px / margin:-14px /
-  // max-width:712px —— 那些是用户评价「治标不治本」的 PC 端对齐补丁，
-  // 已永久删除。这里只恢复圆角与卡片背景本身。
-  `[class*="_column"],[class*="Column"]{border-radius:22px !important;}`,
-  // markdown：圆角面板背景。box-sizing:border-box 是关键 —— 原始设计（备份
-  // proxy.cjs 第 341 行）只有 padding:10px 20px，没指定 box-sizing，等于假设
-  // 上游用 border-box。但线上当前 hash 下实测 content-box，加 padding 会把
-  // 宽度撑大 40px → 移动端 342→382 → 极易溢出 402px 视口。显式锁 border-box
-  // 后外尺寸不变，仅内部文字位置变化，符合「圆角背景恢复但布局不破坏」。
-  `[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"]){border-radius:16px !important;background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;padding:10px 20px !important;box-sizing:border-box !important;}`,
-  // 整个文本区域的**背景**视觉宽度对齐底部 composer 卡 —— 只扩背景，不碰布局。
-  //
-  // 用户 2026-09-18 反馈：
-  //   · "是整个文本背景区域，而不是单个对话背景区域"
-  //     → 改外层 column，不要改单个 markdown 卡
-  //   · "只修改整体背景，文本区域文字布局不要变动"
-  //     → 不能改 column 的 max-width / width（那会改变文字可用宽度、换行位置）
-  //
-  // 上游设计：column 实际 w=742，composerCard 实际 w=774，差 32px。
-  // 之前两轮都试图改盒子宽度（markdown margin -16 / column max-width 774），
-  // 都改到了布局 → 用户两次都否掉。
-  //
-  // 正确修法：**box-shadow 的 spread 向外画 16px 背景环**。
-  //   · box-shadow 不占布局空间 → column 盒子仍是 742，文字换行、行宽、位置
-  //     全部不变
-  //   · box-shadow 自动跟随 border-radius → 22px 圆角完整保留，视觉上就是
-  //     一个 774 宽（742 + 16*2）的圆角面板
-  //   · 纯视觉层，开了关了背景都一样的行为
-  //
-  // 颜色必须和 column 自身背景一致，否则外环和本体有色差。column 自身背景
-  // 上游是 layer-1 的 70% alpha（实测 color(srgb .137 .137 .141 / .7)），
-  // 这里用 color-mix 复现同一个值，且仍走 --dsw-alias-bg-layer-1 变量 →
-  // 明暗主题自动适配。
-  `@media (min-width:1024px){[class*="_column"],[class*="_Column"]{box-shadow:0 0 0 16px color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent) !important;}}`,
-  // ---- 顶面板 kBmzhq_header（会话头 + 标签栏）----
-  //
-  // 圆角面板背景：跟 markdown 同样的 layer-1 颜色 + 22px 圆角，与底部 composer
-  // 卡 (PbIGXq_card, w=774) 同宽居中。原本这条 header 默认全宽 (1160px) 撑满
-  // centerCol，背景也是透明的，看起来像一块扁平的横条；加 panel 后变成顶/底
-  // 两张同宽卡片的对称视觉。
-  //
-  // 用 width + margin 0 auto 收宽度是布局改动，但只影响这一条 header 本身
-  // （不挪走 grid track、不动 sidebarCol / centerCol 划分）；header 内的
-  // titleRow / tabs 都是 flex 自然收窄，外层 width 缩了它们也跟着居中显示。
-  // 不改 box-sizing —— header 默认已是 border-box（实测），加 padding 不会
-  // 撑爆外宽。
-  //
-  // 上游 titleCluster 默认 flex-basis:0% + flex-shrink:1，把外层 width 缩
-  // 到 774 后它会被 headerUtilities 挤到 width:0 → 标题完全消失。这里把
-  // 它的 flex 行为松开（flex-shrink:0 / flex-basis:auto），让标题按内容
-  // 自然占位，headerUtilities 仍可放右但溢出时也至少看得到标题。
-  `[class*="kBmzhq_header"]{background-color:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.5)) !important;border-radius:22px !important;padding:8px 16px !important;box-sizing:border-box !important;}`,
-  // 桌面端 header 收窄到 774px 与 composer 卡同宽居中。移动端不约束宽度，让它
-  // 自然撑满 centerCol（content-box 配合 padding 8px 16px 加上 centerCol 自身
-  // 的 width:100%，不会溢出）。
-  `@media (min-width:1024px){[class*="kBmzhq_header"]{width:774px !important;max-width:774px !important;margin:8px auto 0 !important;}}`,
-  `[class*="kBmzhq_header"] [class*="kBmzhq_titleCluster"]{flex-shrink:0 !important;flex-basis:auto !important;min-width:0 !important;}`,
-  `[class*="kBmzhq_header"] [class*="kBmzhq_tabs"]{padding-left:0 !important;}`,
-  // ---- 移动端布局修复（max-width:640px）----
-  //
-  // 根本原因（已在线上验证，0.1.6-alpha.1 当前构建 index-BRtJ62WN.css +
-  // vendor.css 映射在原生命名）：
-  //   1) AppFrame 用 grid-template-columns 280px minmax(0,1fr) 0px 由 JS 写
-  //      到内联 style；viewport<400px 时中心列被压到 ~110px，几乎不可用。
-  //   2) 整张 AppFrame.module.css 里 0 条基于宽度的 @media，只有 3 条全是
-  //      prefers-reduced-motion。响应式完全靠 JS，但 JS 的 "narrow" 判定
-  //      只在 SIDEBAR_AUTO_COLLAPSE=1024 时自动收缩侧栏，并未阻止用户在
-  //      手机上点开导致中心列崩溃。
-  //   3) centerCol / rightbarCol 都是 position:static 的 grid item，
-  //      sidebarCol / overlayLayer / handle 是 position:absolute 不占轨；
-  //      自动分配默认会把 centerCol 放到 track 1、rightbarCol 放到
-  //      track 2，因此把 grid 改成 "1fr | 0" 后必须显式 grid-column 钉死，
-  //      否则 rightbarCol 会被推到主轨把整张图盖住。
-  //
-  // 选择 .bR7R9W_*（ui-layout/AppFrame 当前 hash）作为首选，外加
-  // [class$="_xxx"] 后缀兜底：上游下次重新打包把 bR7R9W 换成别的 hash 时，
-  // 只要末尾仍是 _frame / _sidebarCol / _centerCol / _rightbarCol / _handle
-  // 就仍然命中。
-  `@media (max-width:640px){`,
-  // 三列 → 单列，centerCol 显式钉到主轨。
-  `.bR7R9W_frame,[class$="_frame"]{grid-template-columns:minmax(0,1fr) 0px !important;}`,
-  `.bR7R9W_centerCol,[class$="_centerCol"]{grid-column:1 !important;}`,
-  `.bR7R9W_rightbarCol,[class$="_rightbarCol"]{grid-column:2 !important;}`,
-  // 侧栏改 overlay：脱离 grid，覆盖在中心列上方。
-  `.bR7R9W_sidebarCol,[class$="_sidebarCol"]{position:absolute !important;left:0 !important;top:0 !important;bottom:0 !important;width:min(86vw,320px) !important;z-index:50 !important;transform:translateX(-100%);transition:transform .22s ease !important;box-shadow:4px 0 24px rgba(0,0,0,.35) !important;}`,
-  // 展开 → 滑入并铺满整个 viewport（mobile 上"抽屉"行为：占满整屏，挡住
-  // centerCol 内容；用户回到侧栏外点不到 center）。原 min(86vw,320px) 改成
-  // 100vw，是因为 viewport ≤640 时 320px 抽屉让右半屏幕仍然显示 centerCol
-  // 内容（"探索未至之境"等 hero 文案透出来），视觉上像"侧栏没打开 / 布局错
-  // 乱"。100vw 后 sidebar 完全占满，centerCol 内容暂时性被遮蔽。
-  `.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{transform:translateX(0) !important;width:100vw !important;max-width:100vw !important;background:#14141a !important;background-color:#14141a !important;}`,
-  `body[data-ds-light-theme] .bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_sidebarCol,body[data-ds-light-theme] .bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_sidebarCol"]{background:#ffffff !important;background-color:#ffffff !important;}`,
-  `.bR7R9W_frame[data-sidebar-collapsed] .bR7R9W_sidebarCol,.bR7R9W_frame[data-sidebar-collapsed] [class$="_sidebarCol"]{width:56px !important;transform:none !important;box-shadow:none !important;}`,
-  // 拖拽把在手机上没意义
-  `.bR7R9W_handle,[class$="_handle"]{display:none !important;}`,
-  // overlayLayer 是 sidebar overlay 的点击关闭层 — 桌面不显示，移动端
-  // 展开 sidebar 时需要变成半透明黑色 backdrop，点击关闭侧栏。
-  `[class$="_overlayLayer"]{display:none !important;}`,
-  `.bR7R9W_frame:not([data-sidebar-collapsed]) [class$="_overlayLayer"],.bR7R9W_frame:not([data-sidebar-collapsed]) .bR7R9W_overlayLayer{display:block !important;background-color:rgba(0,0,0,.5) !important;z-index:49 !important;}`,
-  // 任何仍然被写死成 712px 的面板，在窄屏改成跟随视口。
-  `[class*="_column"],[class*="Column"],[class*="_card"],[class*="composer"],[class*="Composer"]{max-width:100% !important;width:auto !important;}`,
-  // 长内容（代码块 / 表格 / 长单词）不允许把页面顶宽。
-  `pre,code,table,[class*="markdown"],[class*="Markdown"]{max-width:100% !important;overflow-x:auto !important;}`,
-  `img,svg,video{max-width:100% !important;height:auto !important;}`,
-  // 触控目标最小 44px（iOS HIG），只提升不改变视觉盒子。
-  // 刻意不含 a / input：正文里的超链接和表单控件基数太大，一把梭会把
-  // 行高和工具栏撑爆（a 里既有导航项也有 markdown 正文里的行内链接）。
-  `button,[role="button"]{min-height:44px !important;min-width:44px !important;}`,
-  // 输入框在移动端至少要 16px，否则 iOS Safari 聚焦时会自动放大整页。
-  `textarea,input,select{font-size:16px !important;}`,
-  // ---- 设置面板移动端重排（实测 iPhone 16 Pro 402 视口）----
-  // 设置面板（BCrMEa_panel）默认是 nav 188px + content 132px 双列布局，
-  // 移动端视口只有 320px 时 content 被自身 padding 进一步压成 84px，每行
-  // rowText 48px + control 68px 直接溢出，标题/描述文字一字符一字符竖排。
-  // 改成：panel 占满视口 + 纵向布局；nav 横向滚动条；content 占满；行内
-  // rowText / control 上下堆叠。
-  // 同样用 .BCrMEa_* + [class*="settingsPanel"] 双选择器。
-  // z-index 要高于侧栏 overlay（z-index=50），否则侧栏 logo / 工作区
-  // 文字会从面板下面透出来，看起来像没遮挡。
-  // 注意：这里不能用 var(--dsw-alias-bg-layer-1, ...) — 该变量在深色
-  // 主题里实际是 32% 透明的 rgba，回退值永远不会生效，面板会半透。
-  // 改为硬编码的不透明背景色：深色 #14141a / 浅色 #ffffff。
-  `.BCrMEa_panel,[class*="settingsPanel"]{width:100% !important;max-width:100% !important;height:calc(100vh - 56px) !important;flex-direction:column !important;z-index:60 !important;background:#14141a !important;background-color:#14141a !important;}`,
-  `body[data-ds-light-theme] .BCrMEa_panel,body[data-ds-light-theme] [class*="settingsPanel"]{background:#ffffff !important;background-color:#ffffff !important;}`,
-  `.BCrMEa_overlay,[class$="_overlay"]{z-index:60 !important;background:rgba(0,0,0,.5) !important;}`,
-  `.BCrMEa_nav,[class$="_nav"]:not([role=navigation]){width:100% !important;height:auto !important;max-height:56px !important;flex:0 0 auto !important;flex-direction:row !important;overflow-x:auto !important;overflow-y:hidden !important;padding:8px 12px !important;border-bottom:0.5px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;}`,
-  `.BCrMEa_navTitle{display:none !important;}`,
-  `.BCrMEa_navList{flex-direction:row !important;flex-wrap:nowrap !important;gap:8px !important;height:40px !important;align-items:center !important;}`,
-  `.BCrMEa_navCell{flex-shrink:0 !important;width:auto !important;height:32px !important;padding:0 12px !important;}`,
-  `.BCrMEa_content{width:100% !important;flex:1 1 auto !important;min-height:0 !important;padding:12px !important;}`,
-  `[class*="_row"]:not([class*="cubeRow"]):not([class*="navList"]):not([class*="arrowRow"]){flex-direction:column !important;align-items:stretch !important;gap:8px !important;padding:12px 0 !important;}`,
-  `[class*="_rowText"]{width:100% !important;}`,
-  `[class*="_title"],[class*="_desc"]{width:100% !important;max-width:100% !important;}`,
-  // 主题色块（外观 → 浅色/深色/跟随系统）：三个并排均分。
-  `[class$="_cubeRow"]{flex-direction:row !important;flex-wrap:nowrap !important;gap:12px !important;height:auto !important;justify-content:space-between !important;padding:8px 0 !important;}`,
-  `[class$="_themeCube"]{flex:1 1 0 !important;min-width:0 !important;max-width:88px !important;height:88px !important;}`,
-  // 通用弹层（工作区选择器、确认弹窗等）：_dialog_* 默认是 14% 透明，
-  // 透出背景里的选择器图标 / 空状态文字。直接覆盖为不透明深色；
-  // 浅色主题同样翻成白色。同时加阴影 + 提 z-index 让 dialog 浮在
-  // backdrop 之上更有层次。
-  `[class*="_dialog"]{background-color:#14141a !important;background:#14141a !important;border-radius:12px !important;box-shadow:0 16px 48px rgba(0,0,0,.5) !important;z-index:1100 !important;}`,
-  `body[data-ds-light-theme] [class*="_dialog"]{background-color:#ffffff !important;background:#ffffff !important;}`,
-  // 弹层根（_root_*）固定铺满屏幕，给一个深色 backdrop 让弹层与背景
-  // 拉开层次（DSH body 本身就是深色，0.5 黑叠在深色上看不出，必须更深）。
-  `[class*="_root_"]:has([class*="_dialog"]){background-color:rgba(0,0,0,.72) !important;}`,
-  // 选择器下拉（_list_* scrollable portal）：32% 透明同样修成不透明。
-  `[class*="_list_"][class*="portal"]{background-color:#14141a !important;background:#14141a !important;border:1px solid var(--dsw-alias-border-l3,rgba(255,255,255,.1)) !important;border-radius:10px !important;max-width:calc(100vw - 24px) !important;}`,
-  `body[data-ds-light-theme] [class*="_list_"][class*="portal"]{background-color:#ffffff !important;background:#ffffff !important;}`,
-  // 空状态 composer 卡片（PbIGXq_root/hero/...）默认 align-items:center +
-  // flex-grow:0，width 被锁成 ~168px，输入框只剩 136px，无法输入。
-  // 强制 root 横向伸展 + card flex-grow:1，让输入框占满 composer 区域。
-  // 重要：box-sizing:border-box — 上游是 content-box，width:100% 加 32px 左右
-  // padding 会撑出 viewport（320px 视口下实测 PbIGXq_root 撑到 342px）。
-  `[class$="_composerRoot"],[class*="_composerHero"],[class*="_composerRoot"],[class*="PbIGXq_root"]{align-items:stretch !important;width:100% !important;box-sizing:border-box !important;max-width:100% !important;}`,
-  `[class*="PbIGXq_card"]{flex:1 1 auto !important;width:auto !important;min-width:0 !important;max-width:100% !important;box-sizing:border-box !important;}`,
-  `[class*="PbIGXq_input"]{width:100% !important;min-height:44px !important;}`,
-  // centerCol 也加保险：避免任何子元素的 padding/box-sizing 撑爆。
-  `[class$="_centerCol"]{min-width:0 !important;box-sizing:border-box !important;max-width:100% !important;}`,
-  // body/html 横向裁剪 — 兜底：上游有 cmqW6G_panel 等 visibility:hidden
-  // 但 transform:translateX(320px) 推到屏外的元素，会让 body scrollWidth
-  // 翻倍（实测 320 视口下 scrollW=640）。overflow-x:hidden 把它们裁掉。
-  `html,body{overflow-x:hidden !important;}`,
-  `}`,
-].join("");
+// 关闭壁纸且关闭圆角 ⇒ 返回空字符串 ⇒ 与官方镜像表现完全一致。
+// ---------------------------------------------------------------------------
+
+// 表面层不再靠类名猜元素。实测 app 是令牌驱动的：遮挡壁纸的每个大块
+// （侧栏 root、内容卡片、主外壳）底色都直接来自下面这些令牌，
+// 由 body 继承下发。按类名做匹配则会漏（例如侧栏的容器类叫
+// `u5VEBa_root u5VEBa_quietBars`，既不以 _root 结尾也不含 sidebar），
+// 而且上游一旦改哈希前缀就全失效。改令牌则一次到位、且对未来的新组件同样生效。
+//
+// alpha 决定用面板上的哪个滑杆：surface=主体外壳，container=侧栏/菜单/气泡。
+// fallback 用于令牌本身为空时（不同主题/上游版本可能没定义）：
+// 回落到更基础的令牌，保证 color-mix 永远拿到一个合法颜色，
+// 否则该令牌会变成「无效值」，反而让元素失去底色。
+const SOFTEN_TOKENS = [
+  { token: "--dsw-alias-bg-base", snap: "--dsh-snap-bg-base", alpha: "surface", fallback: "#151517" },
+  { token: "--dsw-alias-bg-l1", snap: "--dsh-snap-bg-l1", alpha: "surface", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-alias-bg-l2", snap: "--dsh-snap-bg-l2", alpha: "surface", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-alias-bg-layer-1", snap: "--dsh-snap-bg-layer-1", alpha: "surface", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-alias-bg-layer-2", snap: "--dsh-snap-bg-layer-2", alpha: "container", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-specific-sidebar-fill", snap: "--dsh-snap-sidebar-fill", alpha: "container", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-specific-menu", snap: "--dsh-snap-menu", alpha: "container", fallback: "--dsh-snap-bg-base" },
+  { token: "--dsw-specific-bubble", snap: "--dsh-snap-bubble", alpha: "container", fallback: "--dsh-snap-bg-base" },
+];
+
+const SNAPSHOT_NAMES = new Set(SOFTEN_TOKENS.map((item) => item.snap));
+const SOFTEN_NAMES = new Set(SOFTEN_TOKENS.map((item) => item.token));
+
+/** 令牌轨道的护栏：只允许上面列出的自定义属性，别的一律抛错。 */
+function tokenRule(selector, decls, allowed, important) {
+  for (const name of Object.keys(decls)) {
+    if (!allowed.has(name)) {
+      throw new Error(
+        `[DSH-Proxy] 外观样式违规：${selector} 试图改动未列入白名单的自定义属性 "${name}"。` +
+        `表面层只允许覆写颜色类设计令牌。`
+      );
+    }
+  }
+  const body = Object.entries(decls)
+    .map(([name, value]) => `${name}:${value}${important ? " !important" : ""}`)
+    .join(";");
+  return `${selector}{${body}}`;
+}
+
+function clampUnitPercent(value) {
+  const parsed = Number.parseFloat(value);
+  const unit = Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0;
+  return Math.round(unit * 100);
+}
+
+function roundedCss() {
+  // 只声明圆角。圆角是纯视觉裁剪，不改变盒模型尺寸，因此完全不影响布局。
+  // 上一版配套的 padding / width / margin / box-sizing 全部移除 —— 那才是
+  // 「面板圆角」变成「面板错位」的原因。
+  return [
+    paintRule('[class*="_column"],[class*="Column"]', { "border-radius": "22px" }),
+    paintRule('[class*="markdown"]:not([class*="icon"]):not([class*="Icon"]),[class*="Markdown"]:not([class*="icon"]):not([class*="Icon"])', { "border-radius": "16px" }),
+  ].join("");
+}
+
+// 「快照」与「覆写」必须落在**不同元素**上：
+// 若同写在一个元素上，--dsh-snap-x:var(--dsw-x) 会被该元素自己的
+// --dsw-x:color-mix(...,var(--dsh-snap-x) ...) 反向引用，构成循环，
+// 两个属性一起失效。因此快照放 body（那里令牌还是原值），覆写放它的子级。
+function snapshotCss() {
+  const decls = {};
+  for (const spec of SOFTEN_TOKENS) {
+    const fb = spec.fallback.startsWith("--") ? `var(${spec.fallback})` : spec.fallback;
+    decls[spec.snap] = `var(${spec.token},${fb})`;
+  }
+  return tokenRule("body", decls, SNAPSHOT_NAMES, false);
+}
+
+function tokenCss(cfg) {
+  const percent = {
+    surface: clampUnitPercent(cfg.surface),
+    container: clampUnitPercent(cfg.container),
+  };
+  const decls = {};
+  for (const spec of SOFTEN_TOKENS) {
+    decls[spec.token] = `color-mix(in srgb,var(${spec.snap}) ${percent[spec.alpha]}%,transparent)`;
+  }
+  // 覆写在 body 的直接子级上，靠继承下发到整棵树 —— 包括挂在 body 上的
+  // portal 容器（弹窗/提示），因此比逐个类名匹配更完整。
+  return tokenRule("body > *", decls, SOFTEN_NAMES, true);
+}
+
+function wallpaperCss(cfg, background) {
+  const layers = [];
+  if (cfg.dim > 0) {
+    layers.push(`linear-gradient(rgba(0,0,0,${alpha(cfg.dim)}),rgba(0,0,0,${alpha(cfg.dim)}))`);
+  }
+  layers.push(`url("${background.url}")`);
+  const decls = {
+    content: '""',
+    position: "fixed",
+    inset: "0",
+    "z-index": "-1",
+    "pointer-events": "none",
+    "background-image": layers.join(","),
+    "background-size": cssUrl(cfg.size),
+    "background-position": cssUrl(cfg.position),
+    "background-repeat": "no-repeat",
+    "background-attachment": "fixed",
+  };
+  if (cfg.blur > 0) {
+    // 柔化作用在壁纸这一层，不在任何界面元素上加 backdrop-filter。
+    // scale 略放大以吃掉模糊在边缘产生的透明带。
+    const value = `blur(${Math.round(cfg.blur)}px)`;
+    decls.filter = value;
+    decls["-webkit-filter"] = value;
+    decls.transform = "scale(1.08)";
+  }
+  return layerRule("html::before", decls);
+}
 
 function renderAppearanceCss(cfg) {
-  // An explicitly configured file still fully replaces the stylesheet.
-  const explicit = (process.env.DSH_BACKGROUND_CSS || "").trim();
-  if (explicit) return LAYOUT_FIX_CSS + readCssFile(explicit);
-
   const base = sanitizeAppearance(cfg);
-  if (!base.enabled) return LAYOUT_FIX_CSS;
-  const background = resolveBackground();
-  if (!background) return LAYOUT_FIX_CSS;
 
-  const image = base.dim > 0
-    ? `linear-gradient(rgba(0,0,0,${alpha(base.dim)}),rgba(0,0,0,${alpha(base.dim)})),url("${background.url}")`
-    : `url("${background.url}")`;
-  const percent = Math.round(base.container * 100);
-  // Name-agnostic safety net: hashed CSS-module class names still carry the
-  // original words, so this keeps working even if upstream renames tokens.
-  const containerRule = `[class*="sidebar"],[class*="Sidebar"],[class*="side-bar"],[class*="drawer"],[class*="Drawer"],[class*="panel"],[class*="Panel"],[class*="column"],[class*="Column"],[class*="pane"],[class*="Pane"],[class*="surface"],[class*="Surface"],aside,nav,main,[role="navigation"],[role="complementary"],[role="dialog"]{background-color:color-mix(in srgb,var(--dsw-bgw-layer1) ${percent}%,transparent) !important;}`;
-  const blurRule = base.blur > 0
-    ? `#root{backdrop-filter:blur(${base.blur}px) saturate(1.08) !important;-webkit-backdrop-filter:blur(${base.blur}px) saturate(1.08) !important;}`
-    : "";
-  const mainBlur = base.blurMain > 0 ? `backdrop-filter:blur(${base.blurMain}px) !important;-webkit-backdrop-filter:blur(${base.blurMain}px) !important;` : "";
-  const inputBlur = base.blurInput > 0 ? `backdrop-filter:blur(${base.blurInput}px) !important;-webkit-backdrop-filter:blur(${base.blurInput}px) !important;` : "";
-  const rules = [
-    `html,body{background-image:${image} !important;background-size:${cssUrl(base.size)} !important;background-position:${cssUrl(base.position)} !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}`,
-    `html,body{background-color:transparent !important;}`,
-    buildTokenCss(base.surface, base.subtle),
-    containerRule,
-    blurRule,
-    `main{background-color:rgba(255,255,255,${alpha(base.panelAlpha)}) !important;${mainBlur}}`,
-    `textarea,input,select{background-color:rgba(255,255,255,${alpha(base.inputAlpha)}) !important;${inputBlur}color:#1f2328 !important;}`,
-    `body[data-ds-dark-theme] main{background-color:rgba(28,28,30,${alpha(Math.min(1, base.panelAlpha * 1.3))}) !important;}`,
-    `body[data-ds-dark-theme] textarea,body[data-ds-dark-theme] input,body[data-ds-dark-theme] select{background-color:rgba(28,28,30,${alpha(Math.min(1, base.inputAlpha * 1.4))}) !important;color:#e6e6e6 !important;}`,
-  ].join("");
-  // 布局层在前（几何基线），背景层居中（只上色），background.css 追加在最后
-  // —— 手写的覆盖依然是最终赢家。
-  return LAYOUT_FIX_CSS + rules + readCssFile(BACKGROUND_CSS_FILE);
+  // 显式指定的样式表完全接管 —— 但**只在文件确实存在且非空时**。
+  // 变量指向的文件被删掉 / 路径写错时，不能让整个外观静默失效
+  // （那会表现为「面板还是开着，页面却毫无变化」，极难排查），
+  // 这种情况回落到内置引擎。
+  const override = readCssFile(process.env.DSH_BACKGROUND_CSS || "");
+  if (override) return (base.rounded ? roundedCss() : "") + override;
+
+  const parts = [];
+  if (base.rounded) parts.push(roundedCss());
+
+  const background = base.enabled ? resolveBackground() : null;
+  if (background) {
+    // 主题可能给 html 自己设过底色；置空让壁纸图层露出来（纯颜色改动）。
+    parts.push(paintRule("html", { "background-color": "transparent" }));
+    parts.push(snapshotCss());
+    parts.push(tokenCss(base));
+    parts.push(wallpaperCss(base, background));
+  }
+
+  // 手写的 background.css 追加在最后，优先级最高。
+  return parts.join("") + readCssFile(BACKGROUND_CSS_FILE);
 }
 
 function buildBackgroundCss() {
@@ -585,10 +532,7 @@ function appearancePanelScript() {
     "var FIELDS=[",
     " {k:'surface',t:'整体不透明度',min:0,max:1,step:0.01,u:'pct',adv:0},",
     " {k:'container',t:'侧栏/面板不透明度',min:0,max:1,step:0.01,u:'pct',adv:0},",
-    " {k:'blur',t:'毛玻璃模糊',min:0,max:24,step:1,u:'px',adv:0},",
-    " {k:'subtle',t:'次级（悬停/滚动条）',min:0,max:1,step:0.01,u:'pct',adv:1},",
-    " {k:'blurMain',t:'配置页模糊',min:0,max:24,step:1,u:'px',adv:1},",
-    " {k:'blurInput',t:'配置页输入框模糊',min:0,max:24,step:1,u:'px',adv:1},",
+    " {k:'blur',t:'壁纸柔化',min:0,max:24,step:1,u:'px',adv:0},",
     " {k:'panelAlpha',t:'配置页底色',min:0,max:1,step:0.01,u:'pct',adv:1},",
     " {k:'inputAlpha',t:'配置页输入框底色',min:0,max:1,step:0.01,u:'pct',adv:1},",
     " {k:'dim',t:'壁纸压暗',min:0,max:0.9,step:0.05,u:'num',adv:1}",
@@ -612,6 +556,7 @@ function appearancePanelScript() {
       "+'#dshu-panel.open{display:block}'" +
       "+'#dshu-head{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:10px}'" +
       "+'#dshu-close{cursor:pointer;opacity:.6;padding:0 4px}'" +
+      "+'#dshu-on{display:block;margin:0 0 8px;font-size:12px;cursor:pointer}'" +
       "+'.dshu-row{margin:0 0 10px}'" +
       "+'.dshu-labs{display:flex;justify-content:space-between;font-size:12px;opacity:.85;margin-bottom:2px}'" +
       "+'#dshu-wrap input[type=range]{width:100%;margin:0}'" +
@@ -636,6 +581,7 @@ function appearancePanelScript() {
       "+'<div id=\"dshu-panel\">'" +
       "+'<div id=\"dshu-head\"><span>外观设置</span><span id=\"dshu-close\">×</span></div>'" +
       "+'<label id=\"dshu-on\"><input type=\"checkbox\" id=\"dshu-enabled\"> 启用背景图</label>'" +
+      "+'<label id=\"dshu-on\"><input type=\"checkbox\" id=\"dshu-rounded\"> 圆角面板</label>'" +
       "+'<div id=\"dshu-basic\"></div>'" +
       "+'<span id=\"dshu-adv-toggle\">▸ 高级</span>'" +
       "+'<div id=\"dshu-adv\" style=\"display:none\"></div>'" +
@@ -674,6 +620,7 @@ function appearancePanelScript() {
     " ss.onchange=function(){C.size=ss.value;deb()};",
     " sp.onchange=function(){C.position=sp.value;deb()};",
     " wrap.querySelector('#dshu-enabled').checked=!!C.enabled;",
+    " wrap.querySelector('#dshu-rounded').checked=!!C.rounded;",
     "}",
     "var timer=null;",
     "function deb(){clearTimeout(timer);timer=setTimeout(apply,120)}",
@@ -699,6 +646,7 @@ function appearancePanelScript() {
     "wrap.querySelector('#dshu-close').onclick=function(){setOpen(false)};",
     "wrap.querySelector('#dshu-adv-toggle').onclick=function(){var a=wrap.querySelector('#dshu-adv');var open=a.style.display==='none';a.style.display=open?'block':'none';this.textContent=(open?'▾':'▸')+' 高级'};",
     "wrap.querySelector('#dshu-enabled').onchange=function(){C.enabled=this.checked;apply()};",
+    "wrap.querySelector('#dshu-rounded').onchange=function(){C.rounded=this.checked;apply()};",
     "wrap.querySelector('#dshu-save').onclick=function(){",
     " say('保存中...');",
     " fetch('/__dsh-appearance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(C)})",
@@ -1011,6 +959,39 @@ server.on("upgrade", (req, socket, head) => {
 
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[DSH-Proxy] 监听 0.0.0.0:${PORT} -> ${TARGET_PORT}`);
-});
+
+// ---------------------------------------------------------------------------
+// 可按需引用：_test_appearance_css.js 直接 require 本文件来校验样式输出。
+// 只有直接执行（node proxy.cjs）或经由兼容入口 proxy.js 时才真正监听端口。
+// ---------------------------------------------------------------------------
+module.exports = {
+  DEFAULT_APPEARANCE,
+  APPEARANCE_BOOLEANS,
+  APPEARANCE_NUMBERS,
+  APPEARANCE_SIZES,
+  APPEARANCE_POSITIONS,
+  PAINT_PROPERTIES,
+  LAYER_PROPERTIES,
+  SOFTEN_TOKENS,
+  SNAPSHOT_NAMES,
+  SOFTEN_NAMES,
+  paintRule,
+  layerRule,
+  tokenRule,
+  assertAllowed,
+  sanitizeAppearance,
+  appearanceFromQuery,
+  renderAppearanceCss,
+  buildBackgroundCss,
+  appearancePanelScript,
+  resolveBackground,
+};
+
+const entryFile = String((require.main && require.main.filename) || "");
+const startedDirectly = require.main === module || /[\\/]proxy\.js$/.test(entryFile);
+if (startedDirectly) {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[DSH-Proxy] 监听 0.0.0.0:${PORT} -> ${TARGET_PORT}`);
+  });
+}
+

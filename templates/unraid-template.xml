@@ -34,8 +34,8 @@
   <Config Name="背景图地址" Target="DSH_BACKGROUND_URL" Default="" Mode="" Description="可选，外部图片 URL；填写后优先于本地背景图文件。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
   <Config Name="背景填充方式" Target="DSH_BACKGROUND_SIZE" Default="cover" Mode="" Description="cover 铺满 / contain 完整显示 / auto 原始尺寸。留空等同 cover。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
   <Config Name="背景对齐位置" Target="DSH_BACKGROUND_POSITION" Default="center" Mode="" Description="同 CSS background-position。留空等同 center。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
-  <Config Name="面板不透明度" Target="DSH_BACKGROUND_LAYER_ALPHA" Default="0.72" Mode="" Description="0-1，越小背景越明显、越大文字越清晰。留空使用内置默认值。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="面板不透明度" Target="DSH_BACKGROUND_LAYER_ALPHA" Default="0.72" Mode="" Description="零配置场景下的默认不透明度 0-1，越小背景越明显、越大文字越清晰。在页面右下角「外观」面板里保存过配置后一律以面板为准，改这里不会覆盖已保存的值。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
   <Config Name="背景压暗" Target="DSH_BACKGROUND_DIM" Default="0" Mode="" Description="0-0.9，压暗背景提升文字可读性，0 为关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
-  <Config Name="面板毛玻璃" Target="DSH_BACKGROUND_BLUR" Default="0" Mode="" Description="毛玻璃像素值，0 为关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
+  <Config Name="壁纸柔化" Target="DSH_BACKGROUND_BLUR" Default="0" Mode="" Description="对壁纸本身做模糊（0-40 像素），0 为关闭。只在壁纸图层上生效，不给界面元素加毛玻璃，因此不影响布局。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
   <Config Name="背景开关" Target="DSH_BACKGROUND_ENABLED" Default="auto" Mode="" Description="auto 自动（有图则启用）/ true 强制开启 / false 强制关闭。" Type="Variable" Display="advanced-hide" Required="false" Mask="false"></Config>
 </Container>

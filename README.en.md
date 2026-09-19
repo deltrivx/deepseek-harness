@@ -80,24 +80,27 @@ Upstream DSH only ships light/dark theme and font-size settings — **no backgro
 | `DSH_BACKGROUND_URL` | empty | External image URL; takes precedence over the local file |
 | `DSH_BACKGROUND_SIZE` | `cover` | `cover` / `contain` / `auto` |
 | `DSH_BACKGROUND_POSITION` | `center` | Same as CSS `background-position` |
-| `DSH_BACKGROUND_LAYER_ALPHA` | `0.72` | Panel opacity 0–1; lower shows more background |
+| `DSH_BACKGROUND_LAYER_ALPHA` | `0.72` | Default opacity 0–1 for zero-config setups; lower shows more background. **Once you save from the panel, the panel wins** |
 | `DSH_BACKGROUND_DIM` | `0` | Darkens the background 0–0.9 for readability |
-| `DSH_BACKGROUND_BLUR` | `0` | Panel frosted-glass blur in px; 0 disables it |
+| `DSH_BACKGROUND_BLUR` | `0` | Wallpaper softening (blurs the wallpaper itself) 0–40; 0 disables it |
 | `DSH_BACKGROUND_ENABLED` | `auto` | `auto` / `true` / `false` |
 | `DSH_BACKGROUND_CSS` | empty | Advanced: path to custom CSS that fully replaces the default injection |
 
-> The injection overrides the upstream `--dsw-alias-bg-*` theme tokens with `!important`, so light/dark switching keeps working. When no image file exists and no URL is set, the proxy injects nothing at all.
+> The injection overrides the upstream colour theme tokens with `!important`, so light/dark switching keeps working. It **only ever changes colours** — size, spacing, `display`, `flex` and every other geometry property is confined to the wallpaper's own `html::before` layer, nothing of the sort is ever emitted for page elements, and `backdrop-filter` is not used at all. Enabling the background therefore leaves the native layout untouched: comparing every element's position and size with the background on and off yields 0 differences at desktop 1440 (both empty and with content) and at mobile 390. When no image file exists and no URL is set, the proxy injects nothing at all.
 
 ### 🪄 In-page Appearance Panel (recommended)
 
-A floating **外观 / Appearance** button sits in the bottom-right corner of the main page. It exposes the background switch, surface / sidebar / subtle opacity, frosted-glass blur, wallpaper dimming, sizing and position, plus advanced items such as the config-page tints.
+A floating **外观 / Appearance** button sits in the bottom-right corner of the main page. It exposes the background switch, rounded panels, overall opacity (large base surfaces), sidebar/panel opacity (sidebar, menus, bubbles and cards), wallpaper softening, wallpaper dimming, sizing and position, plus advanced items such as the config-page tints.
 
+- The two opacity values are independent: lower *overall* to reveal the wallpaper, keep *sidebar/panel* higher so sidebar text stays legible.
 - Dragging a slider **previews instantly** — nothing is written to disk and no reload happens.
 - **Save** persists to `appearance.json` next to `background.jpg`, so it survives container rebuilds.
 - **Revert** restores the last saved values, **Reset** restores built-in defaults.
 - **Change image** uploads a local picture (≤ 32 MB, JPEG/PNG/GIF/WebP validated) and replaces `background.jpg`.
 
 Saving and uploading require an authenticated session (the WebUI login is reused); without it you can still preview locally.
+
+> When upgrading from an older build, `appearance.json` is migrated automatically on first load: obsolete blur fields are dropped and the two opacity values are reset to the new defaults. The old sidebar opacity meant the opposite of what it means now, so keeping a stored `0.14` would have left the sidebar nearly invisible. The background switch, softening, dimming, fill mode and position are all preserved.
 
 | Route | Purpose |
 | :--- | :--- |
