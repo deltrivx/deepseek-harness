@@ -537,24 +537,33 @@ check("mobileMedia 对空规则集不产出媒体查询", engine.mobileMedia(MOB
 // 下面每一条都对应一个真实发生过的现象。
 // ---------------------------------------------------------------------------
 
-// 11j-1. 抽屉必须**只在展开态**出现。上游在 frame 上写 data-sidebar-collapsed="true"，
-//        展开时摘掉该属性；没有这条限定，关闭态会残留一整块浮层压住正文。
-const drawerRule = mobileRules.find(
-  (r) => r.selector.includes("sidebarCol") && !r.selector.includes("data-sidebar-collapsed"));
-check("不存在无开合限定的侧栏几何规则", !drawerRule,
-  drawerRule ? drawerRule.selector.slice(0, 120) : "");
-const drawerOpen = mobileRules.filter(
-  (r) => r.selector.includes("sidebarCol") && r.selector.includes(":not([data-sidebar-collapsed])"));
-check("抽屉规则限定在 :not([data-sidebar-collapsed]) 展开态下", drawerOpen.length > 0);
+// 11j-1. 侧栏**基础态**（不带开合限定那条）只能是 56px 图标轨的形态；
+//        「加宽成抽屉」这件事必须发生在展开态限定之下，否则关闭态会撑出
+//        一整块宽面板压住正文。
+check("侧栏基础态宽度为图标轨 56px（未在基础态加宽）",
+  /\[class\*="sidebarCol"\]\{[^}]*width:56px !important/.test(mobileCss));
+check("抽屉加宽规则限定在展开态限定之下",
+  /:not\(\[data-sidebar-collapsed\]\) > \[class\*="sidebarCol"\][^{]*\{[^}]*width:min\(88vw,340px\)/.test(mobileCss));
 
-// 11j-2. 关闭态必须整列 display:none，不能只把宽度压成 0（会残留图标轨道压住正文）。
-const railHidden = mobileRules.filter(
-  (r) => r.selector.includes("sidebarCol") && r.selector.includes("[data-sidebar-collapsed]")
-    && !r.selector.includes(":not("));
-check("关闭态侧栏列声明 display:none（不残留图标轨道）",
-  railHidden.length > 0 && railHidden.every((r) => r.properties.includes("display")),
-  `命中 ${railHidden.length} 条，属性 ${railHidden.map((r) => r.properties.join("/")).join(" | ")}`);
-check("关闭态 display 值为 none", /display:none !important/.test(mobileCss));
+// 11j-2. 关闭态必须**保留 56px 图标轨**，它是手机端唯一的主导航入口。
+//
+//        ⚠️ 这条曾经被写成「关闭态 display:none」—— 理由是把它误当成
+//        「压住正文的幽灵残留」。实际那 56px 里装着打开侧栏 / 新建会话 /
+//        插件 / 工作区 / 搜索 / 设置六个入口，隐藏它等于把导航从手机上拿掉。
+//        现在的写法：整列 fixed + 固定 56px 宽，正文用 padding-left 让位。
+const railRules = mobileRules.filter(
+  (r) => r.selector.includes("sidebarCol") && !r.selector.includes(":not([data-sidebar-collapsed])"));
+check("关闭态侧栏列有几何规则（图标轨不会消失）", railRules.length > 0);
+check("侧栏列在所有状态下都是 fixed（正文因此不被挤压）",
+  railRules.every((r) => r.properties.includes("position")),
+  railRules.map((r) => r.properties.join("/")).join(" | "));
+check("关闭态宽度等于上游原生图标轨 56px",
+  /\[class\*="sidebarCol"\]\{[^}]*width:56px !important/.test(mobileCss),
+  (mobileCss.match(/\[class\*="sidebarCol"\]\{[^}]{0,180}/) || [""])[0]);
+check("★ 任何时候都不得把侧栏列 display:none（会删掉手机端导航入口）",
+  !/sidebarCol[^{]*\{[^}]*display:\s*none/.test(mobileCss));
+check("正文列用 padding-left 给图标轨让位",
+  /\[class\*="centerCol"\]\{[^}]*padding-left:56px !important/.test(mobileCss));
 
 // 11j-3. 抽屉表面必须刷成**不透明纯色**，不能沿用可被柔化的表面令牌。
 //        浮层若半透明，背后的会话文字会与抽屉内容叠印成两层字。

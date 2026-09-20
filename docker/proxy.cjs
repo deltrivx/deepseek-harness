@@ -565,8 +565,6 @@ const MOBILE_FRAME_CLOSED = expandPairs(MOBILE_FRAME_SELECTOR, "[data-sidebar-co
 const MOBILE_SCRIM_SELECTOR = expandPairs(MOBILE_FRAME_SELECTOR, ":not([data-sidebar-collapsed])::after", "");
 const MOBILE_DRAWER_SELECTOR = expandPairs(
   MOBILE_FRAME_SELECTOR, ":not([data-sidebar-collapsed])", MOBILE_SIDEBAR_COL_SELECTOR);
-const MOBILE_RAIL_HIDDEN_SELECTOR = expandPairs(
-  MOBILE_FRAME_SELECTOR, "[data-sidebar-collapsed]", MOBILE_SIDEBAR_COL_SELECTOR);
 
 // 侧栏内容根：去掉上游为桌面预留的横向内边距，把宽度让给列表。
 const MOBILE_SIDEBAR_INNER = ['[class*="u5VEBa_root"]'];
@@ -595,6 +593,11 @@ const MOBILE_BRAND_SELECTORS = ['[class*="u5VEBa_brand"]'];
 const MOBILE_TITLE_SELECTORS = ['[class*="EeRcbq_title"]'];
 const MOBILE_META_SELECTORS = ['[class*="EeRcbq_time"]'];
 const MOBILE_SECTION_LABEL_SELECTORS = ['[class*="sEMD0G_sectionLabel"]', '[class*="u5VEBa_panelTitle"]'];
+
+// 图标轨道（关闭态）的宽度：与上游原生一致，**不要改**。
+// 这一列里装着手机端唯一的主导航入口（打开侧栏 / 新建会话 / 插件 / 工作区 /
+// 搜索 / 设置），隐藏或压缩它等于把这些入口从手机上拿掉。
+const MOBILE_RAIL_WIDTH = "56px";
 
 // 抽屉的最大宽度：留出约 14% 视口给正文做「下面还有内容」的视觉暗示。
 const MOBILE_DRAWER_WIDTH = "min(88vw,340px)";
@@ -637,46 +640,54 @@ function mobileLayoutCss() {
   const rules = [];
 
   // 1. 网格骨架：侧栏列恒为 0，正文列恒吃满剩余宽度。
-  //    上游 inline style 在关闭态写的是 56px（图标轨道），展开态写 280px；
-  //    这里统一压成 0 列宽，侧栏改由下面的 fixed 抽屉呈现。
+  //    上游 inline style 在关闭态写的是 56px（图标轨道），展开态写 280px。
+  //    这里**统一压成 0 列宽**，正文因此始终吃满整屏。
+  //
+  //    ★ 关闭态那条 56px 图标轨道由下面的 sidebarCol 自己「fixed 出来」，
+  //      不再占用网格列 —— 所以列宽恒为 0 是对的，轨道并不会因此消失。
   rules.push(mobileRule(MOBILE_FRAME_SELECTOR, {
     "grid-template-columns": "0px minmax(0px,1fr) 0px",
   }));
   rules.push(mobileRule(MOBILE_CENTER_COL_SELECTOR, {
     "grid-column": "2 / 3",
     "min-width": "0",
+    // ★ 侧栏列是 0 宽、轨道由 sidebarCol 自己 fixed 出来盖在左侧，
+    //   所以正文要主动让出 56px，否则最左边一条会被轨道压住。
+    "padding-left": MOBILE_RAIL_WIDTH,
   }));
   rules.push(mobileRule(MOBILE_RIGHTBAR_COL_SELECTOR, {
     "grid-column": "3 / 4",
   }));
 
-  // 2. 侧栏本体：脱离网格流，做成浮层抽屉。
+  // 2. 侧栏本体 —— 两种状态各自成形态，**都用 fixed 脱离网格流**：
   //
-  //    ★ 只在**展开态**渲染。上游在 frame 上写 `data-sidebar-collapsed="true"`，
-  //      展开时该属性直接消失 —— 这是判断开合最稳的钩子。
-  //      没有这条限定的话，抽屉会在「关闭」状态下也强行显示，表现为图标轨道
-  //      压在正文上、怎么点都收不掉。
+  //    关闭态：56px 宽的图标轨道（上游原生就是这个宽度），固定在左侧。
+  //            它是手机端唯一的主导航入口（打开侧栏 / 新建会话 / 插件 /
+  //            工作区 / 搜索 / 设置），**绝对不能隐藏**。
   //
-  //    ★ background-color 也是必须的：抽屉是实心浮层，不能沿用被壁纸功能柔化过的
-  //      表面令牌（默认 45% 透明），否则浮层背后的会话文字会透上来与抽屉内容叠印。
-  rules.push(mobileRule(`${MOBILE_DRAWER_SELECTOR}`, {
+  //    展开态：变成浮层抽屉，宽度 min(88vw,340px)，浮在正文之上。
+  //
+  //    两态都 fixed 的好处：正文列永远是满宽，不会被侧栏挤成一条缝。
+  rules.push(mobileRule(MOBILE_SIDEBAR_COL_SELECTOR, {
     "grid-column": "1 / 2",
     position: "fixed",
     top: "0",
     bottom: "0",
     left: "0",
-    width: MOBILE_DRAWER_WIDTH,
-    "max-width": MOBILE_DRAWER_WIDTH,
+    width: MOBILE_RAIL_WIDTH,
+    "max-width": MOBILE_RAIL_WIDTH,
     "z-index": "60",
     "overflow-y": "auto",
+    "overflow-x": "hidden",
     "overscroll-behavior": "contain",
     "background-color": MOBILE_DRAWER_SURFACE_SOLID,
-    "box-shadow": "2px 0 16px rgba(0,0,0,0.35)",
   }));
 
-  // 2a. 关闭态：整个侧栏列彻底退出（不再残留图标轨道压住正文）。
-  rules.push(mobileRule(`${MOBILE_RAIL_HIDDEN_SELECTOR}`, {
-    display: "none",
+  // 2a. 展开态：在轨道的基础上加宽成抽屉，并补投影把浮层与正文切开。
+  rules.push(mobileRule(`${MOBILE_DRAWER_SELECTOR}`, {
+    width: MOBILE_DRAWER_WIDTH,
+    "max-width": MOBILE_DRAWER_WIDTH,
+    "box-shadow": "2px 0 16px rgba(0,0,0,0.35)",
   }));
 
   // 2b. 抽屉内层容器刷透明，只保留最外层那一块实心底色，避免内层各自上色后
