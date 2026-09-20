@@ -64,9 +64,65 @@ delete process.env.DSH_BACKGROUND_ENABLED;
 const engine = require(path.join(__dirname, "proxy.cjs"));
 
 // ---------------------------------------------------------------------------
-// CSS 解析：把样式表拆成规则，用于逐条审查属性
+// CSS 解析：把样式表拆成「媒体查询 + 规则」，用于逐条审查属性
 // ---------------------------------------------------------------------------
 function parseRules(css) {
+  const rules = [];
+  let depth = 0;
+  let topBuf = "";
+  let mediaHead = "";
+  let mediaBuf = "";
+  let inMedia = false;
+
+  const flushTop = () => {
+    if (topBuf.trim()) for (const rule of parseFlat(topBuf, "")) rules.push(rule);
+    topBuf = "";
+  };
+  const flushMedia = () => {
+    if (mediaBuf.trim()) for (const rule of parseFlat(mediaBuf, mediaHead)) rules.push(rule);
+    mediaBuf = "";
+    mediaHead = "";
+    inMedia = false;
+  };
+
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i];
+    if (ch === "{") {
+      depth++;
+      if (depth === 1 && topBuf.trim().startsWith("@media")) {
+        inMedia = true;
+        mediaHead = topBuf.trim().replace(/^@media\s*/, "");
+        topBuf = "";
+        continue;
+      }
+      if (inMedia) mediaBuf += ch;
+      else topBuf += ch;
+      continue;
+    }
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        if (inMedia) {
+          // 媒体查询收尾：先解析它的最后一条规则，再离开媒体块。
+          flushMedia();
+        } else {
+          flushTop();
+        }
+        continue;
+      }
+      if (inMedia) mediaBuf += ch;
+      else topBuf += ch;
+      continue;
+    }
+    if (inMedia) mediaBuf += ch;
+    else topBuf += ch;
+  }
+  flushTop();
+  flushMedia();
+  return rules;
+}
+
+function parseFlat(css, media) {
   const rules = [];
   for (const chunk of css.split("}")) {
     const brace = chunk.indexOf("{");
@@ -80,7 +136,7 @@ function parseRules(css) {
         const colon = item.indexOf(":");
         return { property: item.slice(0, colon).trim().toLowerCase() };
       });
-    rules.push({ selector, properties: decls.map((d) => d.property) });
+    rules.push({ selector, media, properties: decls.map((d) => d.property) });
   }
   return rules;
 }
@@ -89,16 +145,35 @@ const ALLOWED = new Set([...engine.PAINT_PROPERTIES, ...engine.LAYER_PROPERTIES]
 // 表面层走「设计令牌覆写」，属性名是自定义属性，单独一套白名单。
 const TOKEN_ALLOWED = new Set([...engine.SNAPSHOT_NAMES, ...engine.SOFTEN_NAMES]);
 const WALLPAPER_LAYER = "html::before";
+const MOBILE_MEDIA = `(max-width:${engine.MOBILE_MAX_WIDTH}px)`;
 
-/** 审查一份样式表：属性必须在白名单内；非图层规则不得出现几何属性。 */
+/**
+ * 审查一份样式表，分两条轨道：
+ *   外观轨道 —— 属性必须在 PAINT/LAYER 白名单内，且几何属性只能出现在壁纸图层；
+ *   移动端轨道 —— 只允许出现在 ≤560px 的媒体查询里，属性须在 MOBILE 白名单内。
+ * 任何「移动端规则跑到媒体查询外面」都会被判为违规，这是「不动 PC 端」的
+ * 代码级保证。
+ */
 function auditCss(css) {
   const problems = [];
   for (const rule of parseRules(css)) {
     const isLayer = rule.selector === WALLPAPER_LAYER;
+    const isMobile = rule.media === MOBILE_MEDIA;
+
+    if (rule.media && !isMobile) {
+      problems.push(`出现计划外的媒体查询 ${rule.media}`);
+    }
+
     for (const property of rule.properties) {
       if (property.startsWith("--")) {
         if (!TOKEN_ALLOWED.has(property)) {
           problems.push(`${rule.selector} 改动了未列入白名单的自定义属性 ${property}`);
+        }
+        continue;
+      }
+      if (isMobile) {
+        if (!engine.MOBILE_PROPERTIES.has(property)) {
+          problems.push(`${rule.selector} 在移动端层使用了白名单外属性 ${property}`);
         }
         continue;
       }
@@ -117,19 +192,34 @@ function auditCss(css) {
   return problems;
 }
 
+/** 取出媒体查询之外的规则（外观轨道），用于「关闭外观 ⇒ 零外观注入」的判定。 */
+function appearanceOnly(css) {
+  const parts = [];
+  for (const rule of parseRules(css)) {
+    if (rule.media) continue;
+    parts.push(rule.selector);
+  }
+  return parts;
+}
+
 const base = engine.DEFAULT_APPEARANCE;
 
 // ---------------------------------------------------------------------------
-section("1. 关闭全部外观 ⇒ 零注入（与官方镜像一致）");
+section("1. 关闭全部外观 ⇒ 外观轨道零注入（与官方镜像一致）");
 // ---------------------------------------------------------------------------
 const offCss = engine.renderAppearanceCss({ ...base, enabled: false, rounded: false });
-check("关闭壁纸 + 关闭圆角时输出为空字符串", offCss === "", `实际输出 ${offCss.length} 字符`);
+// 移动端布局是独立轨道，任何外观开关下都存在；因此这里只断言「外观轨道」为空。
+const offAppearance = appearanceOnly(offCss);
+check("关闭壁纸 + 关闭圆角时，媒体查询之外没有任何规则", offAppearance.length === 0,
+  `实际残留 ${offAppearance.join(" / ") || "(无)"}`);
+check("关闭外观时样式表只剩一个媒体查询块", (offCss.match(/@media/g) || []).length <= 1,
+  `@media 出现 ${(offCss.match(/@media/g) || []).length} 次`);
 
 // ---------------------------------------------------------------------------
 section("2. 只开圆角 ⇒ 只允许 border-radius");
 // ---------------------------------------------------------------------------
 const roundCss = engine.renderAppearanceCss({ ...base, enabled: false, rounded: true });
-const roundRules = parseRules(roundCss);
+const roundRules = parseRules(roundCss).filter((r) => !r.media);
 check("有产出圆角规则", roundRules.length > 0);
 check("圆角规则只声明 border-radius",
   roundRules.every((r) => r.properties.every((p) => p === "border-radius")),
@@ -179,19 +269,23 @@ for (const enabled of [true, false]) {
   }
 }
 const allCss = matrix.map((cfg) => engine.renderAppearanceCss(cfg)).join("\n");
+// 属性红线只对「外观轨道」生效：移动端布局层本来就允许几何属性，
+// 它有独立的白名单与媒体查询约束（见第 11 节）。
+// 这里把媒体查询块整体剥掉，只留外观轨道来做禁止属性扫描。
+const appearanceTrack = allCss.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*\}/g, "");
 
 for (const property of FORBIDDEN) {
   // 图层规则允许 position / inset / z-index / transform，其余一律禁止
   const isLayerOnly = ["position", "inset", "z-index", "transform"].includes(property);
   const pattern = new RegExp(`(^|[;{"])${property.replace(/[-]/g, "\\-")}\\s*:`, "m");
-  const hit = allCss.split("}").some((chunk) => {
+  const hit = appearanceTrack.split("}").some((chunk) => {
     const brace = chunk.indexOf("{");
     if (brace < 0) return false;
     const selector = chunk.slice(0, brace).trim();
     if (isLayerOnly && selector === WALLPAPER_LAYER) return false;
     return pattern.test(chunk.slice(brace + 1));
   });
-  check(`任何配置下都不出现 ${property}`, !hit);
+  check(`外观轨道下任何配置都不出现 ${property}`, !hit);
 }
 
 check("样本覆盖 16 种配置组合", matrix.length === 16);
@@ -279,7 +373,9 @@ section("8. 无壁纸文件时不应注入任何壁纸内容");
 // ---------------------------------------------------------------------------
 fs.rmSync(BG_FILE);
 const noImage = engine.renderAppearanceCss({ ...base, enabled: true, rounded: false });
-check("缺壁纸文件时输出为空", noImage === "", `实际 ${noImage.length} 字符`);
+check("缺壁纸文件时外观轨道为空", appearanceOnly(noImage).length === 0,
+  `实际残留 ${appearanceOnly(noImage).join(" / ") || "(无)"}`);
+check("缺壁纸文件时不产生壁纸图层", !noImage.includes(`${WALLPAPER_LAYER}{`));
 fs.writeFileSync(BG_FILE, Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
   "base64",
@@ -311,7 +407,8 @@ const commentOnly = path.join(HOME, "comment-only.css");
 fs.writeFileSync(commentOnly, "/* 这里没有真正的规则 */\n");
 process.env.DSH_BACKGROUND_CSS = commentOnly;
 const commentCss = engine.renderAppearanceCss({ ...base, enabled: false, rounded: false });
-check("纯注释的手写文件不会产生任何注入", commentCss === "", `实际 ${commentCss.length} 字符`);
+check("纯注释的手写文件不会产生任何外观注入", appearanceOnly(commentCss).length === 0,
+  `实际残留 ${appearanceOnly(commentCss).join(" / ") || "(无)"}`);
 process.env.DSH_BACKGROUND_CSS = path.join(HOME, "background.css");
 
 // ---------------------------------------------------------------------------
@@ -364,6 +461,73 @@ try {
 }
 check("tokenRule 拒绝白名单外的自定义属性", threw);
 check("tokenRule 接受合法令牌", engine.tokenRule("body > *", { "--dsw-alias-bg-base": "red" }, engine.SOFTEN_NAMES, true).includes("--dsw-alias-bg-base:red"));
+
+// ---------------------------------------------------------------------------
+section("11. 移动端布局层：只在小屏媒体查询内，绝不泄漏到桌面端");
+// ---------------------------------------------------------------------------
+const mobileCss = engine.renderAppearanceCss({ ...base, enabled: false, rounded: false });
+const mobileRules = parseRules(mobileCss).filter((r) => r.media);
+const desktopRules = parseRules(mobileCss).filter((r) => !r.media);
+
+// 11a. 所有移动端规则必须恰好包在 ≤560px 的媒体查询里。
+check("移动端规则全部位于 max-width:560px 媒体查询内",
+  mobileRules.length > 0 && mobileRules.every((r) => r.media === MOBILE_MEDIA),
+  `媒体查询集合 ${JSON.stringify([...new Set(mobileRules.map((r) => r.media))])}`);
+
+// 11b. 这是「不动 PC 端」的核心断言：外观轨道里不许出现任何几何属性。
+const GEOMETRY = ["width", "height", "min-width", "max-width", "padding", "margin",
+  "font-size", "line-height", "grid-template-columns", "grid-column", "position", "display"];
+check("媒体查询之外没有出现任何几何属性",
+  desktopRules.every((r) => r.properties.every((p) => !GEOMETRY.includes(p))),
+  desktopRules.filter((r) => r.properties.some((p) => GEOMETRY.includes(p)))
+    .map((r) => `${r.selector} → ${r.properties.join(",")}`).join(" / "));
+
+// 11c. 抽屉方案的关键：侧栏脱离网格流后，另两列必须显式定位，
+//      否则网格自动放置会把 centerCol 挪到 0px 那一列（正文宽度归零）。
+const gridColRules = mobileRules.filter((r) => r.properties.includes("grid-column"));
+check("三个网格列都显式指定了 grid-column（防止自动放置错位）",
+  ["centerCol", "rightbarCol", "sidebarCol"].every((name) =>
+    gridColRules.some((r) => r.selector.includes(name))),
+  `实际：${gridColRules.map((r) => r.selector).join(" / ")}`);
+check("侧栏列宽被压成 0（抽屉不吃网格宽度）",
+  mobileRules.some((r) => r.selector.includes("_frame") && /grid-template-columns:0px/.test(
+    engine.renderAppearanceCss({ ...base, enabled: false, rounded: false })
+      .split("}").find((c) => c.includes("_frame")) || "")));
+
+// 11d. 抽屉必须是 fixed 且带 z-index，否则会随内容滚动 / 被正文盖住。
+check("侧栏抽屉使用 position:fixed", /\[class\*="sidebarCol"\][^}]*position:fixed !important/.test(mobileCss));
+check("侧栏抽屉有 z-index", /\[class\*="sidebarCol"\][^}]*z-index:\d+ !important/.test(mobileCss));
+
+// 11e. 触摸目标：图标按钮必须有 44px 下限。
+check("图标按钮有 44px 最小触摸目标",
+  /\[class\*="u5VEBa_iconButton"\][^}]*min-width:44px !important/.test(mobileCss) &&
+  /\[class\*="u5VEBa_iconButton"\][^}]*min-height:44px !important/.test(mobileCss));
+check("可点行有 44px 最小高度", /min-height:44px !important/.test(mobileCss));
+
+// 11f. 字号在移动端放宽（会话标题 15px）。
+check("会话标题在移动端放大到 15px", /\[class\*="EeRcbq_title"\]\{font-size:15px !important/.test(mobileCss));
+
+// 11g. 移动端层与外观开关无关：开不开背景都必须存在。
+const withBg = engine.renderAppearanceCss({ ...base, enabled: true, rounded: true });
+const withBgMobile = parseRules(withBg).filter((r) => r.media);
+check("开启背景时移动端层依然存在且未重复注入",
+  withBgMobile.length === mobileRules.length &&
+  (withBg.match(/@media/g) || []).length === 1,
+  `规则数 ${withBgMobile.length} vs ${mobileRules.length}，@media ${(withBg.match(/@media/g) || []).length} 次`);
+
+// 11h. 移动端轨道同样有护栏。
+let mobileThrew = false;
+try {
+  engine.mobileRule(".x", { "font-family": "serif" });
+} catch {
+  mobileThrew = true;
+}
+check("mobileRule 拒绝白名单外的属性", mobileThrew);
+check("mobileRule 接受几何属性（这是它存在的理由）",
+  engine.mobileRule(".x", { width: "10px" }).includes("width:10px"));
+
+// 11i. 媒体查询包裹是唯一入口，空规则不产出空 @media 块。
+check("mobileMedia 对空规则集不产出媒体查询", engine.mobileMedia(MOBILE_MEDIA, []) === "");
 
 // ---------------------------------------------------------------------------
 // 收尾

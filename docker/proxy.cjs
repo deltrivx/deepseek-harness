@@ -85,6 +85,52 @@ const LAYER_PROPERTIES = new Set([
   "transform",
 ]);
 
+// 移动端布局层白名单 —— 唯一允许改几何属性、且**必须**整体包在小屏媒体查询里的轨道。
+// 与外观无关：外观永远不许碰几何；这里改几何是因为上游在窄屏下确实排不下。
+const MOBILE_PROPERTIES = new Set([
+  "grid-template-columns",
+  "grid-template-rows",
+  "grid-auto-rows",
+  "grid-column",
+  "grid-row",
+  // 抽屉需要脱离网格流并贴住视口边缘；这些只在 ≤560px 的媒体查询里生效。
+  "position",
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "z-index",
+  "width",
+  "min-width",
+  "max-width",
+  "height",
+  "min-height",
+  "max-height",
+  "padding",
+  "padding-left",
+  "padding-right",
+  "padding-top",
+  "padding-bottom",
+  "margin",
+  "margin-left",
+  "margin-right",
+  "gap",
+  "row-gap",
+  "column-gap",
+  "font-size",
+  "line-height",
+  "overflow",
+  "overflow-x",
+  "overflow-y",
+  "overscroll-behavior",
+  "flex",
+  "flex-direction",
+  "display",
+  "align-items",
+  "visibility",
+  "opacity",
+]);
+
 function assertAllowed(decls, allowed, where, kind) {
   for (const name of Object.keys(decls)) {
     if (!allowed.has(String(name).toLowerCase())) {
@@ -110,6 +156,21 @@ function paintRule(selector, decls) {
 function layerRule(selector, decls) {
   assertAllowed(decls, LAYER_PROPERTIES, selector, "图层类");
   return `${selector}{${declarations(decls)}}`;
+}
+
+// 移动端布局：允许几何属性，但调用方必须整体包在媒体查询里。
+// mobileRule 只做校验，不带媒体查询 —— 由 mobileMedia() 负责包裹，避免漏包。
+function mobileRule(selector, decls) {
+  assertAllowed(decls, MOBILE_PROPERTIES, selector, "移动端布局类");
+  return `${selector}{${declarations(decls)}}`;
+}
+
+// 把若干移动端规则整体包进媒体查询。max-width 是唯一入口，防止某条规则
+// 忘记加断点而泄漏到桌面端 —— 那是「不要动 PC 端」这条硬约束的代码级保证。
+function mobileMedia(query, rules) {
+  const body = rules.filter(Boolean).join("");
+  if (!body) return "";
+  return `@media ${query}{${body}}`;
 }
 
 // 单一事实来源：面板、接口与样式表全部读它。
@@ -439,6 +500,142 @@ function wallpaperCss(cfg, background) {
   return layerRule("html::before", decls);
 }
 
+// ---------------------------------------------------------------------------
+// 移动端布局 —— 上游在窄屏下确实排不下，这里做「小屏专属」收紧。
+//
+// 实测上游行为（390×844，与应用外观无关 —— 关掉外观注入逐项测量完全相同）：
+//   外壳是 grid，列宽由 JS 写在 inline style 上，随侧栏开合切换：
+//     关闭态 `56px minmax(0px, 1fr) 0px`  → 56px 图标轨道 + 334px 正文
+//     打开态 `280px minmax(0px, 1fr) 0px` → 280px 侧栏  + 110px 正文
+//   也就是说：上游把小屏的侧栏做成「挤压式」，展开后正文只剩 110px。
+//   360 宽手机上侧栏占 77.8% 视口，正文 80px —— 实际已不可用。
+//   此外轨道/侧栏里的图标按钮只有 28~38px（低于 44px 最小触摸目标），
+//   会话标题 14px、时间 12px、行高 20px 在手机上也偏小偏密。
+//
+// 小屏改为「轨道 + 浮层抽屉」：
+//   - 轨道（关闭态）保持 56px 不动，正文照旧吃满剩余宽度，这一态本来就好用；
+//   - 展开态不再挤压正文，侧栏改成浮在正文之上的抽屉（fixed + 固定宽度），
+//     正文列始终是满宽，点完会话立刻就是完整内容，不需要再等布局重排。
+//
+// 实现要点：上游把列宽写在 inline style，普通规则压不住，必须 !important；
+// 而一旦让 sidebarCol 脱离网格流（fixed），网格的自动放置会把后面几列整体
+// 前移一格（centerCol 会落到 0px 那一列）—— 所以三个列都必须显式指定
+// grid-column，不能依赖自动放置。
+//
+// **全部规则只存在于 ≤ 560px 的媒体查询内，桌面端一个字节都不会变。**
+// ---------------------------------------------------------------------------
+const MOBILE_MAX_WIDTH = 560;
+const MOBILE_QUERY = `(max-width:${MOBILE_MAX_WIDTH}px)`;
+
+// 网格骨架：三列全部显式定位，避免 sidebarCol 脱离流后发生错位。
+const MOBILE_FRAME_SELECTOR = '[class*="_frame"],[class*="Frame"]';
+const MOBILE_SIDEBAR_COL_SELECTOR = '[class*="sidebarCol"]';
+const MOBILE_CENTER_COL_SELECTOR = '[class*="centerCol"]';
+const MOBILE_RIGHTBAR_COL_SELECTOR = '[class*="rightbarCol"]';
+
+// 侧栏内容根：去掉上游为桌面预留的横向内边距，把宽度让给列表。
+const MOBILE_SIDEBAR_INNER = ['[class*="u5VEBa_root"]'];
+
+// 底部设置栏 / 侧栏内可点行：抬高到最小触摸目标。
+const MOBILE_TAP_ROW_SELECTORS = [
+  '[class*="u5VEBa_newSession"]',
+  '[class*="u5VEBa_panelRow"]',
+  '[class*="BCrMEa_trigger"]',
+  '[class*="sEMD0G_sessionOverflow"]',
+];
+
+// 纯图标按钮：补内边距把热区顶到 44px（图标本身尺寸不变，视觉上不会变笨重）。
+const MOBILE_ICON_SELECTORS = [
+  '[class*="u5VEBa_iconButton"]',
+  '[class*="sEMD0G_iconButton"]',
+  '[class*="sEMD0G_searchButton"]',
+  '[class*="BCrMEa_trigger"]',
+  '[class*="EeRcbq_iconButton"]',
+];
+
+// 品牌按钮（logo + 文字）：上游是 24px 高，手机上偏小；抬到 44px。
+const MOBILE_BRAND_SELECTORS = ['[class*="u5VEBa_brand"]'];
+
+// 会话标题与时间：手机上放宽字号与行高。
+const MOBILE_TITLE_SELECTORS = ['[class*="EeRcbq_title"]'];
+const MOBILE_META_SELECTORS = ['[class*="EeRcbq_time"]'];
+const MOBILE_SECTION_LABEL_SELECTORS = ['[class*="sEMD0G_sectionLabel"]', '[class*="u5VEBa_panelTitle"]'];
+
+// 抽屉的最大宽度：留出约 14% 视口给正文做「下面还有内容」的视觉暗示。
+const MOBILE_DRAWER_WIDTH = "min(88vw,340px)";
+
+function mobileLayoutCss() {
+  const rules = [];
+
+  // 1. 网格骨架：侧栏列恒为 0，正文列恒吃满剩余宽度。
+  //    上游 inline style 在关闭态写的是 56px（图标轨道），展开态写 280px；
+  //    这里统一压成 0 列宽，侧栏改由下面的 fixed 抽屉呈现。
+  rules.push(mobileRule(MOBILE_FRAME_SELECTOR, {
+    "grid-template-columns": "0px minmax(0px,1fr) 0px",
+  }));
+  rules.push(mobileRule(MOBILE_CENTER_COL_SELECTOR, {
+    "grid-column": "2 / 3",
+    "min-width": "0",
+  }));
+  rules.push(mobileRule(MOBILE_RIGHTBAR_COL_SELECTOR, {
+    "grid-column": "3 / 4",
+  }));
+
+  // 2. 侧栏本体：脱离网格流，做成浮层抽屉。
+  //    宽度固定、不吃正文空间；纵向可滚（上游是 overflow:hidden，会话一多就滚不动）。
+  rules.push(mobileRule(MOBILE_SIDEBAR_COL_SELECTOR, {
+    "grid-column": "1 / 2",
+    position: "fixed",
+    top: "0",
+    bottom: "0",
+    left: "0",
+    width: MOBILE_DRAWER_WIDTH,
+    "max-width": MOBILE_DRAWER_WIDTH,
+    "z-index": "60",
+    "overflow-y": "auto",
+    "overscroll-behavior": "contain",
+  }));
+
+  // 3. 侧栏内容根：收紧左右内边距，把宽度还给会话标题。
+  rules.push(mobileRule(MOBILE_SIDEBAR_INNER.join(","), {
+    padding: "6px 8px",
+    "max-width": "100%",
+  }));
+
+  // 4. 可点行抬高到 44px。
+  rules.push(mobileRule(MOBILE_TAP_ROW_SELECTORS.join(","), {
+    "min-height": "44px",
+  }));
+
+  // 5. 纯图标按钮：靠内边距把热区顶到 44px。
+  rules.push(mobileRule(MOBILE_ICON_SELECTORS.join(","), {
+    "min-width": "44px",
+    "min-height": "44px",
+    padding: "8px",
+  }));
+
+  // 5b. 品牌按钮与顶部行：统一抬到 44px 高，避免 logo 行成为最小的点击目标。
+  rules.push(mobileRule(MOBILE_BRAND_SELECTORS.join(","), {
+    "min-height": "44px",
+  }));
+
+  // 6. 字号与行高：会话标题 15px / 行高 22px，时间 13px，分组标题 13px。
+  rules.push(mobileRule(MOBILE_TITLE_SELECTORS.join(","), {
+    "font-size": "15px",
+    "line-height": "22px",
+  }));
+  rules.push(mobileRule(MOBILE_META_SELECTORS.join(","), {
+    "font-size": "13px",
+    "line-height": "22px",
+  }));
+  rules.push(mobileRule(MOBILE_SECTION_LABEL_SELECTORS.join(","), {
+    "font-size": "13px",
+    "line-height": "20px",
+  }));
+
+  return mobileMedia(MOBILE_QUERY, rules);
+}
+
 function renderAppearanceCss(cfg) {
   const base = sanitizeAppearance(cfg);
 
@@ -447,10 +644,15 @@ function renderAppearanceCss(cfg) {
   // （那会表现为「面板还是开着，页面却毫无变化」，极难排查），
   // 这种情况回落到内置引擎。
   const override = readCssFile(process.env.DSH_BACKGROUND_CSS || "");
-  if (override) return (base.rounded ? roundedCss() : "") + override;
+  if (override) {
+    return (base.rounded ? roundedCss() : "") + mobileLayoutCss() + override;
+  }
 
   const parts = [];
   if (base.rounded) parts.push(roundedCss());
+
+  // 移动端布局是独立轨道：不依赖背景开关，关闭背景时同样生效。
+  parts.push(mobileLayoutCss());
 
   const background = base.enabled ? resolveBackground() : null;
   if (background) {
@@ -972,11 +1174,17 @@ module.exports = {
   APPEARANCE_POSITIONS,
   PAINT_PROPERTIES,
   LAYER_PROPERTIES,
+  MOBILE_PROPERTIES,
+  MOBILE_MAX_WIDTH,
+  MOBILE_QUERY,
   SOFTEN_TOKENS,
   SNAPSHOT_NAMES,
   SOFTEN_NAMES,
   paintRule,
   layerRule,
+  mobileRule,
+  mobileMedia,
+  mobileLayoutCss,
   tokenRule,
   assertAllowed,
   sanitizeAppearance,
