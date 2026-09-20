@@ -530,6 +530,68 @@ check("mobileRule 接受几何属性（这是它存在的理由）",
 check("mobileMedia 对空规则集不产出媒体查询", engine.mobileMedia(MOBILE_MEDIA, []) === "");
 
 // ---------------------------------------------------------------------------
+// 11j. 抽屉的三个「上线后翻车」的缺陷，逐条钉死。
+//
+// 上一版抽屉只验了几何，结果线上是这样：关闭态抽屉照样占满全屏、表面
+// 沿用被柔化的令牌只有 45% 不透明（背后会话文字透上来叠印）、没有开合限定。
+// 下面每一条都对应一个真实发生过的现象。
+// ---------------------------------------------------------------------------
+
+// 11j-1. 抽屉必须**只在展开态**出现。上游在 frame 上写 data-sidebar-collapsed="true"，
+//        展开时摘掉该属性；没有这条限定，关闭态会残留一整块浮层压住正文。
+const drawerRule = mobileRules.find(
+  (r) => r.selector.includes("sidebarCol") && !r.selector.includes("data-sidebar-collapsed"));
+check("不存在无开合限定的侧栏几何规则", !drawerRule,
+  drawerRule ? drawerRule.selector.slice(0, 120) : "");
+const drawerOpen = mobileRules.filter(
+  (r) => r.selector.includes("sidebarCol") && r.selector.includes(":not([data-sidebar-collapsed])"));
+check("抽屉规则限定在 :not([data-sidebar-collapsed]) 展开态下", drawerOpen.length > 0);
+
+// 11j-2. 关闭态必须整列 display:none，不能只把宽度压成 0（会残留图标轨道压住正文）。
+const railHidden = mobileRules.filter(
+  (r) => r.selector.includes("sidebarCol") && r.selector.includes("[data-sidebar-collapsed]")
+    && !r.selector.includes(":not("));
+check("关闭态侧栏列声明 display:none（不残留图标轨道）",
+  railHidden.length > 0 && railHidden.every((r) => r.properties.includes("display")),
+  `命中 ${railHidden.length} 条，属性 ${railHidden.map((r) => r.properties.join("/")).join(" | ")}`);
+check("关闭态 display 值为 none", /display:none !important/.test(mobileCss));
+
+// 11j-3. 抽屉表面必须刷成**不透明纯色**，不能沿用可被柔化的表面令牌。
+//        浮层若半透明，背后的会话文字会与抽屉内容叠印成两层字。
+check("抽屉表面为不透明纯色（不沿用柔化令牌）",
+  /background-color:#[0-9a-fA-F]{3,8} !important/.test(mobileCss));
+check("抽屉表面不是 var() 令牌引用（令牌会被壁纸功能柔化）",
+  !/sidebarCol[^{]*\{[^}]*background-color:var\(/.test(mobileCss));
+
+// 11j-4. 抽屉内层容器必须刷透明，否则内层各自上色会在圆角/描边处露缝。
+check("抽屉内层容器背景置为 transparent",
+  /background-color:transparent !important/.test(mobileCss));
+
+// 11j-5. 必须有遮罩层（正文之上、抽屉之下），并显式声明层级与不拦截点击。
+check("存在展开态遮罩层",
+  /:not\(\[data-sidebar-collapsed\]\)::after/.test(mobileCss));
+check("遮罩层 z-index 低于抽屉（55 < 60）",
+  /z-index:55 !important/.test(mobileCss) && /z-index:60 !important/.test(mobileCss));
+check("遮罩层不拦截指针事件（否则点外面收不起来）",
+  /pointer-events:none !important/.test(mobileCss));
+
+// 11j-6. 选择器拼接不得留下「逗号后悬空」的裸选择器。
+//        直接拼 `[a],[b]:not(...)` 会让后缀只挂在最后一项，前面的 [a] 变成没有目标
+//        的裸选择器，整条规则静默失效 —— 抽屉的开合限定曾因此完全没生效。
+const dangling = mobileRules.filter((r) => /(^|,)\s*:not\(/.test(r.selector));
+check("移动端选择器无悬空裸选择器", dangling.length === 0,
+  dangling.map((r) => r.selector).join(" ;; ").slice(0, 140));
+check("开合限定已逐项展开到每个父选择器",
+  mobileRules.every((r) => {
+    if (!r.selector.includes("data-sidebar-collapsed")) return true;
+    return r.selector.split(",").every((p) => p.includes("data-sidebar-collapsed"));
+  }));
+
+// 11j-7. 设置面板等其它浮层必须抬到抽屉之上，否则会被抽屉盖住。
+check("设置面板层级高于抽屉",
+  /cmqW6G_panel[^{]*\{[^}]*z-index:(8[0-9]|9[0-9])/.test(mobileCss));
+
+// ---------------------------------------------------------------------------
 // 收尾
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

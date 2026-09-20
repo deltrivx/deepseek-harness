@@ -129,6 +129,13 @@ const MOBILE_PROPERTIES = new Set([
   "align-items",
   "visibility",
   "opacity",
+  // 抽屉必须是不透明表面：它是浮在正文之上的浮层，若沿用桌面那种半透明
+  // 「表面令牌」，背后的会话文字会直接透上来，两层字叠在一起无法阅读。
+  // 颜色与 pointer-events 都不改变任何盒模型尺寸，几何中性。
+  "background",
+  "background-color",
+  "box-shadow",
+  "pointer-events",
 ]);
 
 function assertAllowed(decls, allowed, where, kind) {
@@ -533,6 +540,34 @@ const MOBILE_SIDEBAR_COL_SELECTOR = '[class*="sidebarCol"]';
 const MOBILE_CENTER_COL_SELECTOR = '[class*="centerCol"]';
 const MOBILE_RIGHTBAR_COL_SELECTOR = '[class*="rightbarCol"]';
 
+// 把「父选择器列表 + 状态后缀 + 子选择器列表」展开成完整的选择器列表。
+//
+// 直接写 `'[a],[b]:not(X) > [c]'` 是错的：逗号分隔时后缀只挂在最后一项，前面的
+// `[a]` 会变成一条没有目标的裸选择器（它甚至会命中 frame 自己），整条规则静默跑偏。
+// 曾经因此让抽屉的开合限定完全没生效。
+function expandPairs(parentList, stateSuffix, childList) {
+  const parents = parentList.split(",").map((s) => s.trim());
+  const children = childList.split(",").map((s) => s.trim());
+  const out = [];
+  for (const p of parents) {
+    if (childList) {
+      for (const c of children) out.push(`${p}${stateSuffix} > ${c}`);
+    } else {
+      out.push(`${p}${stateSuffix}`);
+    }
+  }
+  return out.join(",");
+}
+
+// 展开态 = frame 上没有 data-sidebar-collapsed（上游展开时会把该属性摘掉）。
+const MOBILE_FRAME_OPEN = expandPairs(MOBILE_FRAME_SELECTOR, ":not([data-sidebar-collapsed])", "");
+const MOBILE_FRAME_CLOSED = expandPairs(MOBILE_FRAME_SELECTOR, "[data-sidebar-collapsed]", "");
+const MOBILE_SCRIM_SELECTOR = expandPairs(MOBILE_FRAME_SELECTOR, ":not([data-sidebar-collapsed])::after", "");
+const MOBILE_DRAWER_SELECTOR = expandPairs(
+  MOBILE_FRAME_SELECTOR, ":not([data-sidebar-collapsed])", MOBILE_SIDEBAR_COL_SELECTOR);
+const MOBILE_RAIL_HIDDEN_SELECTOR = expandPairs(
+  MOBILE_FRAME_SELECTOR, "[data-sidebar-collapsed]", MOBILE_SIDEBAR_COL_SELECTOR);
+
 // 侧栏内容根：去掉上游为桌面预留的横向内边距，把宽度让给列表。
 const MOBILE_SIDEBAR_INNER = ['[class*="u5VEBa_root"]'];
 
@@ -564,6 +599,40 @@ const MOBILE_SECTION_LABEL_SELECTORS = ['[class*="sEMD0G_sectionLabel"]', '[clas
 // 抽屉的最大宽度：留出约 14% 视口给正文做「下面还有内容」的视觉暗示。
 const MOBILE_DRAWER_WIDTH = "min(88vw,340px)";
 
+// 抽屉与遮罩的表面色。
+//
+// 为什么必须自己定色、而不是沿用上游的表面令牌：
+// 壁纸功能会把 `--dsw-alias-bg-layer-*` / `--dsw-specific-sidebar-fill` 这类令牌
+// **整体「柔化」成半透明**（默认 container=45%）。桌面端侧栏背后只有壁纸，半透明
+// 没问题；但小屏上侧栏是**浮在会话之上的抽屉**，45% 透明会让底下的会话文字直接
+// 透上来，两层文字互相叠印 —— 这正是「移动端一开侧栏就没法看」的直接原因。
+//
+// 抽屉是唯一需要「实心」的场景，因此在移动端轨道里显式给一个不透明底色，
+// 并把遮罩压在其下、正文之上。两处都只改颜色，不动几何。
+const MOBILE_DRAWER_SURFACE = "var(--dsw-alias-bg-base,#151517)";
+const MOBILE_DRAWER_SURFACE_SOLID = "#1b1b1c";
+const MOBILE_SCRIM_COLOR = "rgba(0,0,0,0.45)";
+
+// 设置面板：上游做成一张从右侧推入的全屏 sheet（z-index:40），本身也是半透明的。
+// 小屏上有两个问题：
+//   ① 它的 z-index(40) 低于抽屉(60) —— 侧栏开着时点进设置，抽屉会盖在设置上面；
+//   ② 半透明底 + 底下透出抽屉内容，三层文字互相叠印。
+// 因此移动端把设置面板抬到抽屉之上，并同样刷成实心表面。
+const MOBILE_SETTINGS_PANEL_SELECTOR = '[class*="cmqW6G_panel"]';
+const MOBILE_SETTINGS_Z = "80";
+
+// 抽屉内层各面板：上游只给外层上色，内层是透明的；外层一旦不透明，
+// 内层的圆角/描边会与外层底色错开，因此内层也统一刷成同一实心色。
+const MOBILE_DRAWER_SURFACE_SELECTORS = [
+  '[class*="u5VEBa_root"]',
+  '[class*="u5VEBa_quietBars"]',
+  '[class*="u5VEBa_regionArea"]',
+  '[class*="sEMD0G_root"]',
+  '[class*="sEMD0G_listArea"]',
+  '[class*="sEMD0G_list"]',
+  '[class*="sEMD0G_treeBody"]',
+];
+
 function mobileLayoutCss() {
   const rules = [];
 
@@ -582,8 +651,15 @@ function mobileLayoutCss() {
   }));
 
   // 2. 侧栏本体：脱离网格流，做成浮层抽屉。
-  //    宽度固定、不吃正文空间；纵向可滚（上游是 overflow:hidden，会话一多就滚不动）。
-  rules.push(mobileRule(MOBILE_SIDEBAR_COL_SELECTOR, {
+  //
+  //    ★ 只在**展开态**渲染。上游在 frame 上写 `data-sidebar-collapsed="true"`，
+  //      展开时该属性直接消失 —— 这是判断开合最稳的钩子。
+  //      没有这条限定的话，抽屉会在「关闭」状态下也强行显示，表现为图标轨道
+  //      压在正文上、怎么点都收不掉。
+  //
+  //    ★ background-color 也是必须的：抽屉是实心浮层，不能沿用被壁纸功能柔化过的
+  //      表面令牌（默认 45% 透明），否则浮层背后的会话文字会透上来与抽屉内容叠印。
+  rules.push(mobileRule(`${MOBILE_DRAWER_SELECTOR}`, {
     "grid-column": "1 / 2",
     position: "fixed",
     top: "0",
@@ -594,6 +670,42 @@ function mobileLayoutCss() {
     "z-index": "60",
     "overflow-y": "auto",
     "overscroll-behavior": "contain",
+    "background-color": MOBILE_DRAWER_SURFACE_SOLID,
+    "box-shadow": "2px 0 16px rgba(0,0,0,0.35)",
+  }));
+
+  // 2a. 关闭态：整个侧栏列彻底退出（不再残留图标轨道压住正文）。
+  rules.push(mobileRule(`${MOBILE_RAIL_HIDDEN_SELECTOR}`, {
+    display: "none",
+  }));
+
+  // 2b. 抽屉内层容器刷透明，只保留最外层那一块实心底色，避免内层各自上色后
+  //     在圆角/描边处露出缝隙。
+  rules.push(mobileRule(MOBILE_DRAWER_SURFACE_SELECTORS.join(","), {
+    "background-color": "transparent",
+  }));
+
+  // 2c. 遮罩层：正文之上、抽屉之下压一层暗色，进一步防止文字穿透，
+  //     同时给出「点外面可收起」的视觉暗示。用 frame 的伪元素，不新增 DOM。
+  //     同样只在展开态出现。
+  rules.push(mobileRule(`${MOBILE_SCRIM_SELECTOR}`, {
+    position: "fixed",
+    top: "0",
+    bottom: "0",
+    left: "0",
+    right: "0",
+    "z-index": "55",
+    "background-color": MOBILE_SCRIM_COLOR,
+    "pointer-events": "none",
+    display: "block",
+  }));
+
+  // 2d. 设置面板：抬到抽屉之上，并刷成实心表面。
+  //     父级 rightbarCol 被压成 0 列宽不影响它（面板是 position:fixed），
+  //     但它的 z-index 低于抽屉、底色又是半透明的，两层一起看就是糊成一片。
+  rules.push(mobileRule(MOBILE_SETTINGS_PANEL_SELECTOR, {
+    "z-index": MOBILE_SETTINGS_Z,
+    "background-color": MOBILE_DRAWER_SURFACE_SOLID,
   }));
 
   // 3. 侧栏内容根：收紧左右内边距，把宽度还给会话标题。
@@ -1185,6 +1297,7 @@ module.exports = {
   mobileRule,
   mobileMedia,
   mobileLayoutCss,
+  expandPairs,
   tokenRule,
   assertAllowed,
   sanitizeAppearance,
