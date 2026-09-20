@@ -720,14 +720,29 @@ function mobileLayoutCss() {
   }));
 
   // 3. 侧栏内容根：收紧左右内边距，把宽度还给会话标题。
+  //
+  //    ★ 展开态用 8px；**收起态（图标轨）必须收得更窄**。轨道自身只有 56px，
+  //      留 8px 内边距后行宽只剩 40px，再减去行自身的内边距就掉到 36px ——
+  //      低于 44px 的可点下限。收窄到 6px 后行宽正好 44px。
   rules.push(mobileRule(MOBILE_SIDEBAR_INNER.join(","), {
     padding: "6px 8px",
     "max-width": "100%",
   }));
-
+  //    ★ 收起态用**后代**选择器而不是子代：真实层级是
+  //      frame > sidebarCol > (wrapper) > u5VEBa_root，中间隔了一层，
+  //      写 `>` 会一条都匹配不到（面板看上去没变化，且不报错）。
+  rules.push(mobileRule(
+    expandPairs(MOBILE_FRAME_SELECTOR, "[data-sidebar-collapsed]", MOBILE_SIDEBAR_INNER.join(","))
+      .replace(/ > /g, " "), {
+      padding: "6px 6px",
+    }));
   // 4. 可点行抬高到 44px。
+  //    宽度一并给足：图标轨里这几行是「图标 + 文字」的行式按钮，
+  //    只抬高度的话，在 56px 窄轨里会留下 36px 宽的窄条，手指容易点空。
+  //    它们不是纯图标按钮（内容会溢出），所以只设 min-width 而不动 padding。
   rules.push(mobileRule(MOBILE_TAP_ROW_SELECTORS.join(","), {
     "min-height": "44px",
+    "min-width": "44px",
   }));
 
   // 5. 纯图标按钮：靠内边距把热区顶到 44px。

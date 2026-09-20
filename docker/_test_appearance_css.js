@@ -600,6 +600,24 @@ check("开合限定已逐项展开到每个父选择器",
 check("设置面板层级高于抽屉",
   /cmqW6G_panel[^{]*\{[^}]*z-index:(8[0-9]|9[0-9])/.test(mobileCss));
 
+// 11j-8. 收起态的图标轨只有 56px，里面的可点行必须显式给 min-width。
+//        只抬 min-height 的话，行宽会被轨道内边距压到 44px 以下（实测 36px），
+//        在手机上属于「看得到但点不准」。
+const tapRow = mobileRules.find((r) => r.selector.includes("u5VEBa_newSession"));
+check("图标轨可点行声明了 min-width:44px",
+  !!tapRow && /min-width:44px !important/.test(mobileCss));
+
+// 11j-9. 收起态要收窄轨道内边距为 44px 行让位；且必须用**后代**选择器 ——
+//        真实层级是 frame > sidebarCol > wrapper > root，中间隔了一层，
+//        用子代组合符一条都匹配不到，而且不会报错。
+const railPad = mobileRules.filter(
+  (r) => r.selector.includes("data-sidebar-collapsed") && r.selector.includes("u5VEBa_root"));
+check("收起态收窄轨道内边距", railPad.length > 0 && /padding:6px 6px/.test(mobileCss),
+  railPad.map((r) => r.selector).join(" ;; ").slice(0, 140));
+check("轨道内边距规则用后代选择器（层级中间隔着 wrapper）",
+  railPad.length > 0 && railPad.every((r) => !r.selector.includes(">")),
+  railPad.map((r) => r.selector).join(" ;; ").slice(0, 140));
+
 // ---------------------------------------------------------------------------
 // 收尾
 // ---------------------------------------------------------------------------
