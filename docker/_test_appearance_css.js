@@ -463,160 +463,36 @@ check("tokenRule 拒绝白名单外的自定义属性", threw);
 check("tokenRule 接受合法令牌", engine.tokenRule("body > *", { "--dsw-alias-bg-base": "red" }, engine.SOFTEN_NAMES, true).includes("--dsw-alias-bg-base:red"));
 
 // ---------------------------------------------------------------------------
-section("11. 移动端布局层：只在小屏媒体查询内，绝不泄漏到桌面端");
+section("11. 移动端布局层：已停用，不再向窄屏下发任何几何规则");
 // ---------------------------------------------------------------------------
+// 历史背景：这里曾经把窄屏侧栏改成「fixed 浮层抽屉」，结果是一连串负优化 ——
+// 抽屉宽度、内容根宽度、开合限定、轨道让位互相牵制，改一处坏一处。
+// 上游给侧栏内容根挂了 inline `width:280px`，抽屉一加宽就露出空白带；
+// 强行撑开内容根，内部按 280px 排好的搜索框和操作按钮又互相挤占。
+//
+// 结论：移动端**完全采用上游原生布局**。侧栏就地展开虽然会把会话挤窄，
+// 但那是官方行为，显示正确。这一节断言它不会被重新加回来。
 const mobileCss = engine.renderAppearanceCss({ ...base, enabled: false, rounded: false });
 const mobileRules = parseRules(mobileCss).filter((r) => r.media);
-const desktopRules = parseRules(mobileCss).filter((r) => !r.media);
 
-// 11a. 所有移动端规则必须恰好包在 ≤560px 的媒体查询里。
-check("移动端规则全部位于 max-width:560px 媒体查询内",
-  mobileRules.length > 0 && mobileRules.every((r) => r.media === MOBILE_MEDIA),
-  `媒体查询集合 ${JSON.stringify([...new Set(mobileRules.map((r) => r.media))])}`);
+// 11a. 移动端层必须不再产出任何规则。
+check("外观轨道不产出移动端规则", mobileRules.length === 0,
+  mobileRules.map((r) => r.selector).join(" ;; ").slice(0, 160));
+check("样式表里不存在 max-width:560px 媒体查询",
+  !/@media[^{]*max-width:560px/.test(mobileCss), mobileCss.slice(0, 160));
 
-// 11b. 这是「不动 PC 端」的核心断言：外观轨道里不许出现任何几何属性。
-const GEOMETRY = ["width", "height", "min-width", "max-width", "padding", "margin",
-  "font-size", "line-height", "grid-template-columns", "grid-column", "position", "display"];
-check("媒体查询之外没有出现任何几何属性",
-  desktopRules.every((r) => r.properties.every((p) => !GEOMETRY.includes(p))),
-  desktopRules.filter((r) => r.properties.some((p) => GEOMETRY.includes(p)))
-    .map((r) => `${r.selector} → ${r.properties.join(",")}`).join(" / "));
-
-// 11c. 抽屉方案的关键：侧栏脱离网格流后，另两列必须显式定位，
-//      否则网格自动放置会把 centerCol 挪到 0px 那一列（正文宽度归零）。
-const gridColRules = mobileRules.filter((r) => r.properties.includes("grid-column"));
-check("三个网格列都显式指定了 grid-column（防止自动放置错位）",
-  ["centerCol", "rightbarCol", "sidebarCol"].every((name) =>
-    gridColRules.some((r) => r.selector.includes(name))),
-  `实际：${gridColRules.map((r) => r.selector).join(" / ")}`);
-check("侧栏列宽被压成 0（抽屉不吃网格宽度）",
-  mobileRules.some((r) => r.selector.includes("_frame") && /grid-template-columns:0px/.test(
-    engine.renderAppearanceCss({ ...base, enabled: false, rounded: false })
-      .split("}").find((c) => c.includes("_frame")) || "")));
-
-// 11d. 抽屉必须是 fixed 且带 z-index，否则会随内容滚动 / 被正文盖住。
-check("侧栏抽屉使用 position:fixed", /\[class\*="sidebarCol"\][^}]*position:fixed !important/.test(mobileCss));
-check("侧栏抽屉有 z-index", /\[class\*="sidebarCol"\][^}]*z-index:\d+ !important/.test(mobileCss));
-
-// 11e. 触摸目标：图标按钮必须有 44px 下限。
-check("图标按钮有 44px 最小触摸目标",
-  /\[class\*="u5VEBa_iconButton"\][^}]*min-width:44px !important/.test(mobileCss) &&
-  /\[class\*="u5VEBa_iconButton"\][^}]*min-height:44px !important/.test(mobileCss));
-check("可点行有 44px 最小高度", /min-height:44px !important/.test(mobileCss));
-
-// 11f. 字号在移动端放宽（会话标题 15px）。
-check("会话标题在移动端放大到 15px", /\[class\*="EeRcbq_title"\]\{font-size:15px !important/.test(mobileCss));
-
-// 11g. 移动端层与外观开关无关：开不开背景都必须存在。
-const withBg = engine.renderAppearanceCss({ ...base, enabled: true, rounded: true });
-const withBgMobile = parseRules(withBg).filter((r) => r.media);
-check("开启背景时移动端层依然存在且未重复注入",
-  withBgMobile.length === mobileRules.length &&
-  (withBg.match(/@media/g) || []).length === 1,
-  `规则数 ${withBgMobile.length} vs ${mobileRules.length}，@media ${(withBg.match(/@media/g) || []).length} 次`);
-
-// 11h. 移动端轨道同样有护栏。
-let mobileThrew = false;
-try {
-  engine.mobileRule(".x", { "font-family": "serif" });
-} catch {
-  mobileThrew = true;
+// 11b. 侧栏 / 栅格 / 正文列一律不许被外观轨道碰。
+for (const sel of ["sidebarCol", "centerCol", "rightbarCol", "grid-template-columns"]) {
+  check(`外观轨道不触碰 ${sel}`, !mobileCss.includes(sel),
+    mobileCss.includes(sel) ? `出现于：${mobileCss.slice(Math.max(0, mobileCss.indexOf(sel) - 80), mobileCss.indexOf(sel) + 80)}` : "");
 }
-check("mobileRule 拒绝白名单外的属性", mobileThrew);
-check("mobileRule 接受几何属性（这是它存在的理由）",
-  engine.mobileRule(".x", { width: "10px" }).includes("width:10px"));
 
-// 11i. 媒体查询包裹是唯一入口，空规则不产出空 @media 块。
-check("mobileMedia 对空规则集不产出媒体查询", engine.mobileMedia(MOBILE_MEDIA, []) === "");
+// 11c. 停用开关是显式的，避免被误以为「漏调用」。
+check("移动端布局层带显式停用开关", engine.MOBILE_LAYOUT_DISABLED === true);
 
-// ---------------------------------------------------------------------------
-// 11j. 抽屉的三个「上线后翻车」的缺陷，逐条钉死。
-//
-// 上一版抽屉只验了几何，结果线上是这样：关闭态抽屉照样占满全屏、表面
-// 沿用被柔化的令牌只有 45% 不透明（背后会话文字透上来叠印）、没有开合限定。
-// 下面每一条都对应一个真实发生过的现象。
-// ---------------------------------------------------------------------------
-
-// 11j-1. 侧栏**基础态**（不带开合限定那条）只能是 56px 图标轨的形态；
-//        「加宽成抽屉」这件事必须发生在展开态限定之下，否则关闭态会撑出
-//        一整块宽面板压住正文。
-check("侧栏基础态宽度为图标轨 56px（未在基础态加宽）",
-  /\[class\*="sidebarCol"\]\{[^}]*width:56px !important/.test(mobileCss));
-check("抽屉加宽规则限定在展开态限定之下",
-  /:not\(\[data-sidebar-collapsed\]\) > \[class\*="sidebarCol"\][^{]*\{[^}]*width:min\(88vw,340px\)/.test(mobileCss));
-
-// 11j-2. 关闭态必须**保留 56px 图标轨**，它是手机端唯一的主导航入口。
-//
-//        ⚠️ 这条曾经被写成「关闭态 display:none」—— 理由是把它误当成
-//        「压住正文的幽灵残留」。实际那 56px 里装着打开侧栏 / 新建会话 /
-//        插件 / 工作区 / 搜索 / 设置六个入口，隐藏它等于把导航从手机上拿掉。
-//        现在的写法：整列 fixed + 固定 56px 宽，正文用 padding-left 让位。
-const railRules = mobileRules.filter(
-  (r) => r.selector.includes("sidebarCol") && !r.selector.includes(":not([data-sidebar-collapsed])"));
-check("关闭态侧栏列有几何规则（图标轨不会消失）", railRules.length > 0);
-check("侧栏列在所有状态下都是 fixed（正文因此不被挤压）",
-  railRules.every((r) => r.properties.includes("position")),
-  railRules.map((r) => r.properties.join("/")).join(" | "));
-check("关闭态宽度等于上游原生图标轨 56px",
-  /\[class\*="sidebarCol"\]\{[^}]*width:56px !important/.test(mobileCss),
-  (mobileCss.match(/\[class\*="sidebarCol"\]\{[^}]{0,180}/) || [""])[0]);
-check("★ 任何时候都不得把侧栏列 display:none（会删掉手机端导航入口）",
-  !/sidebarCol[^{]*\{[^}]*display:\s*none/.test(mobileCss));
-check("正文列用 padding-left 给图标轨让位",
-  /\[class\*="centerCol"\]\{[^}]*padding-left:56px !important/.test(mobileCss));
-
-// 11j-3. 抽屉表面必须刷成**不透明纯色**，不能沿用可被柔化的表面令牌。
-//        浮层若半透明，背后的会话文字会与抽屉内容叠印成两层字。
-check("抽屉表面为不透明纯色（不沿用柔化令牌）",
-  /background-color:#[0-9a-fA-F]{3,8} !important/.test(mobileCss));
-check("抽屉表面不是 var() 令牌引用（令牌会被壁纸功能柔化）",
-  !/sidebarCol[^{]*\{[^}]*background-color:var\(/.test(mobileCss));
-
-// 11j-4. 抽屉内层容器必须刷透明，否则内层各自上色会在圆角/描边处露缝。
-check("抽屉内层容器背景置为 transparent",
-  /background-color:transparent !important/.test(mobileCss));
-
-// 11j-5. 必须有遮罩层（正文之上、抽屉之下），并显式声明层级与不拦截点击。
-check("存在展开态遮罩层",
-  /:not\(\[data-sidebar-collapsed\]\)::after/.test(mobileCss));
-check("遮罩层 z-index 低于抽屉（55 < 60）",
-  /z-index:55 !important/.test(mobileCss) && /z-index:60 !important/.test(mobileCss));
-check("遮罩层不拦截指针事件（否则点外面收不起来）",
-  /pointer-events:none !important/.test(mobileCss));
-
-// 11j-6. 选择器拼接不得留下「逗号后悬空」的裸选择器。
-//        直接拼 `[a],[b]:not(...)` 会让后缀只挂在最后一项，前面的 [a] 变成没有目标
-//        的裸选择器，整条规则静默失效 —— 抽屉的开合限定曾因此完全没生效。
-const dangling = mobileRules.filter((r) => /(^|,)\s*:not\(/.test(r.selector));
-check("移动端选择器无悬空裸选择器", dangling.length === 0,
-  dangling.map((r) => r.selector).join(" ;; ").slice(0, 140));
-check("开合限定已逐项展开到每个父选择器",
-  mobileRules.every((r) => {
-    if (!r.selector.includes("data-sidebar-collapsed")) return true;
-    return r.selector.split(",").every((p) => p.includes("data-sidebar-collapsed"));
-  }));
-
-// 11j-7. 设置面板等其它浮层必须抬到抽屉之上，否则会被抽屉盖住。
-check("设置面板层级高于抽屉",
-  /cmqW6G_panel[^{]*\{[^}]*z-index:(8[0-9]|9[0-9])/.test(mobileCss));
-
-// 11j-8. 收起态的图标轨只有 56px，里面的可点行必须显式给 min-width。
-//        只抬 min-height 的话，行宽会被轨道内边距压到 44px 以下（实测 36px），
-//        在手机上属于「看得到但点不准」。
-const tapRow = mobileRules.find((r) => r.selector.includes("u5VEBa_newSession"));
-check("图标轨可点行声明了 min-width:44px",
-  !!tapRow && /min-width:44px !important/.test(mobileCss));
-
-// 11j-9. 收起态要收窄轨道内边距为 44px 行让位；且必须用**后代**选择器 ——
-//        真实层级是 frame > sidebarCol > wrapper > root，中间隔了一层，
-//        用子代组合符一条都匹配不到，而且不会报错。
-const railPad = mobileRules.filter(
-  (r) => r.selector.includes("data-sidebar-collapsed") && r.selector.includes("u5VEBa_root"));
-check("收起态收窄轨道内边距", railPad.length > 0 && /padding:6px 6px/.test(mobileCss),
-  railPad.map((r) => r.selector).join(" ;; ").slice(0, 140));
-check("轨道内边距规则用后代选择器（层级中间隔着 wrapper）",
-  railPad.length > 0 && railPad.every((r) => !r.selector.includes(">")),
-  railPad.map((r) => r.selector).join(" ;; ").slice(0, 140));
+// 11d. 其余外观功能不受影响：圆角与（有壁纸时的）背景层照常。
+const roundedOnly = engine.renderAppearanceCss({ ...base, enabled: false, rounded: true });
+check("停用移动端层后圆角仍然生效", /border-radius/.test(roundedOnly));
 
 // ---------------------------------------------------------------------------
 // 收尾

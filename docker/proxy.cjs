@@ -599,8 +599,17 @@ const MOBILE_SECTION_LABEL_SELECTORS = ['[class*="sEMD0G_sectionLabel"]', '[clas
 // 搜索 / 设置），隐藏或压缩它等于把这些入口从手机上拿掉。
 const MOBILE_RAIL_WIDTH = "56px";
 
-// 抽屉的最大宽度：留出约 14% 视口给正文做「下面还有内容」的视觉暗示。
-const MOBILE_DRAWER_WIDTH = "min(88vw,340px)";
+// 抽屉宽度：留出约 1/4 视口给正文做「下面还有内容」的视觉暗示。
+//
+// ★ 这里特意比常见实现更窄一点。抽屉是**覆盖**在会话上的浮层，宽度选大了
+//   不会挤压内容，但会把整屏糊住 —— 视觉上就是「一打开侧栏什么都看不见了」，
+//   用户会觉得比「就地展开挤压」还难受。留 22% 视口（390px 下约 86px 露白）
+//   既能让会话区露出一截、明确暗示「点外面可收起」，也给侧栏内部留够了
+//   放会话标题的宽度。
+//
+//   上限 288px 是实测取的值：再宽下去，在 390px 屏幕上侧栏内部的会话标题
+//   也不会更长（标题自身有截断），只是徒增遮挡。
+const MOBILE_DRAWER_WIDTH = "min(78vw,288px)";
 
 // 抽屉与遮罩的表面色。
 //
@@ -636,7 +645,20 @@ const MOBILE_DRAWER_SURFACE_SELECTORS = [
   '[class*="sEMD0G_treeBody"]',
 ];
 
+// 移动端布局层 —— **已停用**。
+//
+// 这里曾经把窄屏侧栏改成「fixed 浮层抽屉」。结果是反复的负优化：抽屉宽度、
+// 内容根宽度、开合限定、轨道让位互相牵制，改一处坏一处，最后离原生布局越来越远。
+//
+// 现在**不再向移动端下发任何几何规则**，窄屏完全采用上游原生布局：
+// 侧栏就地展开（`grid-template-columns` 由上游写成 `280px 110px 0px`），
+// 会话区会被挤窄，但那是官方行为，显示正确、不会错位。
+//
+// 保留函数是为了不动调用点；`git` 历史里能找到被移除的那套规则。
+const MOBILE_LAYOUT_DISABLED = true;
+
 function mobileLayoutCss() {
+  if (MOBILE_LAYOUT_DISABLED) return "";
   const rules = [];
 
   // 1. 网格骨架：侧栏列恒为 0，正文列恒吃满剩余宽度。
@@ -651,10 +673,18 @@ function mobileLayoutCss() {
   rules.push(mobileRule(MOBILE_CENTER_COL_SELECTOR, {
     "grid-column": "2 / 3",
     "min-width": "0",
-    // ★ 侧栏列是 0 宽、轨道由 sidebarCol 自己 fixed 出来盖在左侧，
-    //   所以正文要主动让出 56px，否则最左边一条会被轨道压住。
-    "padding-left": MOBILE_RAIL_WIDTH,
   }));
+  // ★ 只有**收起态**才需要给图标轨道让位。轨道由 sidebarCol 自己 fixed 出来
+  //   盖在左侧，正文不让位的话最左边一条会被压住。
+  //
+  //   展开态**不能让位**：那时侧栏已经变成覆盖在会话上的浮层抽屉，
+  //   会话本就该满宽；再留 56px 会给一条「已经被抽屉盖住的轨道」腾地方，
+  //   等于凭空在会话左边挖掉一块，比不让位更糟。
+  rules.push(mobileRule(
+    expandPairs(MOBILE_FRAME_SELECTOR, "[data-sidebar-collapsed]", MOBILE_CENTER_COL_SELECTOR)
+      .replace(/ > /g, " "), {
+      "padding-left": MOBILE_RAIL_WIDTH,
+    }));
   rules.push(mobileRule(MOBILE_RIGHTBAR_COL_SELECTOR, {
     "grid-column": "3 / 4",
   }));
@@ -662,6 +692,7 @@ function mobileLayoutCss() {
   // 2. 侧栏本体 —— 两种状态各自成形态，**都用 fixed 脱离网格流**：
   //
   //    关闭态：56px 宽的图标轨道（上游原生就是这个宽度），固定在左侧。
+
   //            它是手机端唯一的主导航入口（打开侧栏 / 新建会话 / 插件 /
   //            工作区 / 搜索 / 设置），**绝对不能隐藏**。
   //
@@ -721,12 +752,19 @@ function mobileLayoutCss() {
 
   // 3. 侧栏内容根：收紧左右内边距，把宽度还给会话标题。
   //
+  //    ★ 必须显式写 `width:100%`，只写 `max-width:100%` 是不够的 ——
+  //      上游给这个节点挂了 **inline `width:280px`**（JS 跟着开合状态写），
+  //      `max-width` 只约束上限、压不过一个比上限更小的**具体宽度**，
+  //      于是抽屉加宽到 341px 后，内容仍锁在 280px，右侧空出一条 61px 的空白带。
+  //      显式 `width:100%` 才能让内容跟着容器走。
+  //
   //    ★ 展开态用 8px；**收起态（图标轨）必须收得更窄**。轨道自身只有 56px，
   //      留 8px 内边距后行宽只剩 40px，再减去行自身的内边距就掉到 36px ——
   //      低于 44px 的可点下限。收窄到 6px 后行宽正好 44px。
   rules.push(mobileRule(MOBILE_SIDEBAR_INNER.join(","), {
-    padding: "6px 8px",
+    width: "100%",
     "max-width": "100%",
+    padding: "6px 8px",
   }));
   //    ★ 收起态用**后代**选择器而不是子代：真实层级是
   //      frame > sidebarCol > (wrapper) > u5VEBa_root，中间隔了一层，
@@ -1323,6 +1361,7 @@ module.exports = {
   mobileRule,
   mobileMedia,
   mobileLayoutCss,
+  MOBILE_LAYOUT_DISABLED,
   expandPairs,
   tokenRule,
   assertAllowed,
