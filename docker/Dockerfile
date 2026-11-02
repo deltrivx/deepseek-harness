@@ -12,8 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN npm install -g pnpm@9
 
-ARG DSH_REF=""
-RUN if [ -n "$DSH_REF" ]; then       git clone --depth=1 --branch "$DSH_REF" https://github.com/deepseek-ai/deepseek-harness.git /app 2>/dev/null ||       git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app;     else       git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app;     fi
+ARG DSH_REF="dsh-v0.2.1-rc.5"
+RUN if [ -n "$DSH_REF" ]; then \
+      git clone --depth=1 --branch "$DSH_REF" https://github.com/deepseek-ai/deepseek-harness.git /app 2>/dev/null || \
+      git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app; \
+    else \
+      git clone --depth=1 https://github.com/deepseek-ai/deepseek-harness.git /app; \
+    fi
 
 RUN pnpm install
 RUN pnpm run build:official
@@ -22,7 +27,6 @@ FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
-# 安装 git, curl, ca-certificates 等基础依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -33,15 +37,13 @@ RUN npm install -g pnpm@9
 
 COPY --from=builder /app /app
 
-COPY docker/proxy.cjs /app/proxy.cjs
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3080 3018
+EXPOSE 3018
 
 ENV NODE_ENV=production
 ENV DSH_HOME=/root/.dsh
-ENV PORT=3080
 ENV DSH_PORT=3018
 
 VOLUME ["/root/.dsh", "/workspace"]
