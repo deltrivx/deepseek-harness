@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== 正在启动 DeepSeek Harness (DSH) 原生官方版 ==="
+echo "=== 正在启动 local coding tool (DSH) 官方构建产物 ==="
 
 mkdir -p /root/.dsh /workspace
 
 cd /app
-exec node --import tsx/esm apps/cli/src/bin.ts web --no-open --port "${DSH_PORT:-3018}"
+exec node /app/apps/cli/lib/bin.js web --no-open --port "${DSH_PORT:-3018}"
